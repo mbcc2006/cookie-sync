@@ -1,5 +1,5 @@
 {
-  "name": "cookie-sync",
+  "name": "@ivjnus/cookie-sync",
   "version": "0.7.0",
   "description": "Securely sync browser cookies to CLI and Playwright",
   "license": "MIT",
