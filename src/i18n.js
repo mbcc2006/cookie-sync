@@ -393,6 +393,24 @@ const TRANSLATIONS = {
     ja: "Cookie {count} 件を {format} 形式で {file} に保存しました。",
     ko: "쿠키 {count}개를 {format} 형식으로 {file}에 저장했습니다."
   },
+  "reason.ytDlp": {
+    en: "Run yt-dlp with synchronized Cookies for {domain}",
+    zh: "使用已同步的 {domain} Cookie 运行 yt-dlp",
+    ja: "同期した {domain} の Cookie で yt-dlp を実行",
+    ko: "동기화된 {domain} 쿠키로 yt-dlp 실행"
+  },
+  "error.ytDlpExit": {
+    en: "yt-dlp exited with code {code}.",
+    zh: "yt-dlp 退出，状态码为 {code}。",
+    ja: "yt-dlp がコード {code} で終了しました。",
+    ko: "yt-dlp가 코드 {code}(으)로 종료되었습니다."
+  },
+  "error.ytDlpSignal": {
+    en: "yt-dlp was terminated by signal {signal}.",
+    zh: "yt-dlp 被信号 {signal} 终止。",
+    ja: "yt-dlp がシグナル {signal} で終了しました。",
+    ko: "yt-dlp가 신호 {signal}에 의해 종료되었습니다."
+  },
   "error.invalidUrl": {
     en: "Provide a valid HTTP or HTTPS URL.",
     zh: "请提供有效的 HTTP 或 HTTPS URL。",
@@ -406,10 +424,10 @@ const TRANSLATIONS = {
     ko: "{browser}에서 {url}을(를) 열었습니다."
   },
   "error.usage": {
-    en: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    zh: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    ja: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    ko: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>"
+    en: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|yt-dlp <url> [--browser ID|console] [--domain domain] [--yt-dlp path] [--reason text] [-- yt-dlp args]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    zh: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|yt-dlp <url> [--browser ID|console] [--domain domain] [--yt-dlp path] [--reason text] [-- yt-dlp args]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    ja: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|yt-dlp <url> [--browser ID|console] [--domain domain] [--yt-dlp path] [--reason text] [-- yt-dlp args]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    ko: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|yt-dlp <url> [--browser ID|console] [--domain domain] [--yt-dlp path] [--reason text] [-- yt-dlp args]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>"
   }
 };
 

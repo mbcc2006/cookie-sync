@@ -102,6 +102,14 @@ npx @ivjnus/cookie-sync cookies github.com --format txt --out cookies.txt
 curl --cookie cookies.txt https://github.com/
 ```
 
+Run `yt-dlp` with synchronized Cookies without leaving a persistent Cookie file:
+
+```bash
+npx @ivjnus/cookie-sync yt-dlp "https://www.youtube.com/watch?v=VIDEO_ID" --browser "Work laptop" -- --no-playlist
+```
+
+CookieSync refreshes the Cookie snapshot, writes a private temporary Netscape file, passes it to `yt-dlp`, and removes it when the process exits. Arguments after `--` are passed directly to `yt-dlp`. Use `--yt-dlp /path/to/yt-dlp` for a non-default executable, or `--domain youtube.com` when the Cookie domain cannot be inferred from the URL.
+
 Omit `--out` to print the result to stdout. The format defaults to `json`; `--browser` and `--reason` work the same way as with `pull`.
 
 ## Manage multiple browsers

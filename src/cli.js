@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { spawn } from "node:child_process";
 import { chromium } from "playwright-core";
 import WebSocket from "ws";
 import { consoleImportUrl } from "./console.js";
@@ -14,7 +15,7 @@ import { toPlaywrightCookie, toPlaywrightStorageState } from "./playwright.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
-const CLI_VERSION = "0.8.1";
+const CLI_VERSION = "0.8.2";
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
@@ -357,6 +358,41 @@ async function exportCookies(domain, format, outFile, browserSelector, reason) {
   console.log(t("info.cookiesSaved", { count: snapshot.cookies.length, format, file: outFile }));
 }
 
+async function ytDlp(url, executable, browserSelector, reason, domainOverride, passthroughArgs) {
+  let target;
+  try {
+    target = new URL(url);
+  } catch {
+    throw new Error(t("error.invalidUrl"));
+  }
+  if (!["http:", "https:"].includes(target.protocol)) throw new Error(t("error.invalidUrl"));
+  const domain = normalizeDomain(domainOverride || target.hostname.replace(/^www\./, ""));
+  const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
+  if (browserDevice) {
+    try {
+      await pull(domain, browserDevice.id, reason || t("reason.ytDlp", { domain }));
+    } catch (error) {
+      if (!error.message.includes("No message found")) throw error;
+    }
+  }
+  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
+  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-yt-dlp-"));
+  const cookieFile = path.join(directory, "cookies.txt");
+  try {
+    fs.writeFileSync(cookieFile, toNetscapeCookies(snapshot.cookies), { mode: 0o600 });
+    const child = spawn(executable || "yt-dlp", [...passthroughArgs, url, "--cookies", cookieFile], { stdio: "inherit" });
+    const result = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    if (result.signal) throw new Error(t("error.ytDlpSignal", { signal: result.signal }));
+    if (result.code !== 0) throw new Error(t("error.ytDlpExit", { code: result.code }));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function open(url, browserSelector) {
   let target;
   try {
@@ -398,10 +434,13 @@ function langCommand(value) {
 
 const args = process.argv.slice(2);
 const [command, value] = args;
+const separator = args.indexOf("--");
+const commandArgs = separator >= 0 ? args.slice(0, separator) : args;
 const optionValue = (name) => {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+  const index = commandArgs.indexOf(name);
+  return index >= 0 ? commandArgs[index + 1] : undefined;
 };
+const passthroughArgs = separator >= 0 ? args.slice(separator + 1) : [];
 try {
   if (command === "pair") await createPair();
   else if (command === "console") await consoleImport(value, optionValue("--reason"));
@@ -413,6 +452,7 @@ try {
   else if (command === "browse") await browse(value, optionValue("--browser"), optionValue("--reason"));
   else if (command === "playwright") await playwright(value, optionValue("--out"), optionValue("--browser"), optionValue("--reason"));
   else if (command === "cookies") await exportCookies(value, optionValue("--format"), optionValue("--out"), optionValue("--browser"), optionValue("--reason"));
+  else if (command === "yt-dlp") await ytDlp(value, optionValue("--yt-dlp"), optionValue("--browser"), optionValue("--reason"), optionValue("--domain"), passthroughArgs);
   else if (command === "open") await open(value, optionValue("--browser"));
   else if (command === "revoke") await revoke();
   else if (command === "export") await exportPair(optionValue("--out"));
