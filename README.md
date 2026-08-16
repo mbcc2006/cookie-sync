@@ -2,6 +2,15 @@
 
 CookieSync transfers selected browser cookies from a Chrome extension on one device to a CLI on another device. The relay stores only encrypted message envelopes; the CLI owns the X25519 private key and is the only device able to decrypt a snapshot.
 
+## Project links
+
+- Website and usage guide: https://cookie-sync.ivjn.us
+- Hosted relay and browser pairing: https://relay.ivjn.us
+- Relay health check: https://relay.ivjn.us/healthz
+- Source repository: https://github.com/mbcc2006/cookie-sync
+
+The CLI and extension use the hosted relay by default. Run `cookie-sync pair`, then open the generated `https://relay.ivjn.us/?pair=...` URL in Chrome to prefill the extension.
+
 ## Run the relay
 
 The relay must be reachable by both the Chrome device and the CLI machine. Put it behind HTTPS in production. It persists encrypted messages in `./data` for up to seven days and deletes a message after a successful CLI pull.
@@ -27,7 +36,7 @@ On the CLI machine:
 cookie-sync pair
 ```
 
-The command also prints `https://relay.ivjn.us/?pair=...`. Open that URL in Chrome to validate the short-lived code, prefill the installed CookieSync extension, and attempt to open its popup. If Chrome blocks automatic popup opening, click the CookieSync toolbar icon; the pair code remains prefilled.
+The command prints a clickable `Pair URL`, for example `https://relay.ivjn.us/?pair=...`. Open it in Chrome to validate the short-lived code, prefill the installed CookieSync extension, and attempt to open its popup. If Chrome blocks automatic popup opening, click the CookieSync toolbar icon; the pair code remains prefilled.
 
 Load `extension/` as an unpacked extension in `chrome://extensions`, enter the relay URL and pair code, then authorize it once. Chrome asks for cookie access to all sites. The extension receives a dedicated upload-only token and continuously syncs every cookie domain on changes, browser startup, and a 15-minute fallback interval. The relay stores only the latest encrypted snapshot for each domain.
 
@@ -69,6 +78,8 @@ Each browser has an independent CLI access policy:
 - `confirm`: retrieval remains blocked until the extension user explicitly clicks Allow. Denied and expired requests never expose the encrypted snapshot.
 
 Every retrieval creates a two-minute, browser- and domain-scoped access request. An approved request can be consumed only once. Change the policy from the extension popup at any time.
+
+The extension popup also includes a per-browser Cookie access audit. It records requested domains, notify/confirm policy, approval, denial, expiration, actual consumption time, CLI hostname/platform/architecture/version, and the source IP observed by the relay. Audit events never contain Cookie names, values, encrypted envelopes, upload tokens, or CLI read tokens. Each browser can view only its own latest 100 events; the relay retains up to 500 events per browser for 90 days.
 
 To wait for a person to press the extension's sync button before continuing an automation job:
 

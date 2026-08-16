@@ -5,10 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CookieSync</title>
   <style>
-    body { font: 14px sans-serif; margin: 16px; min-width: 300px; }
+    body { font: 14px sans-serif; margin: 16px; min-width: 360px; color: #13251d; background: #fbf8ef; }
     label, input, select, button { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
     button { padding: 8px; }
     #status { white-space: pre-wrap; }
+    .audit-head { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #ccc; margin-top: 16px; padding-top: 12px; }
+    .audit-head button { width: auto; padding: 5px 9px; margin: 0; }
+    #audit { max-height: 260px; overflow: auto; margin-top: 8px; }
+    .event { border-left: 3px solid #88958e; padding: 7px 9px; margin: 7px 0; background: white; font-size: 12px; }
+    .event.approved, .event.auto-approved, .event.consumed { border-color: #4d8f38; }
+    .event.denied, .event.expired { border-color: #d45a34; }
+    .event b, .event time, .event small { display: block; }
+    .event time, .event small { color: #66736c; margin-top: 3px; }
   </style>
 </head>
 <body>
@@ -23,6 +31,10 @@
   </label>
   <button id="sync">Authorize and sync all permitted domains</button>
   <p id="status"></p>
+  <section id="audit-section" hidden>
+    <div class="audit-head"><strong>Cookie 读取审计</strong><button id="refresh-audit">刷新</button></div>
+    <div id="audit"><p>暂无访问记录。</p></div>
+  </section>
   <script src="popup.js"></script>
 </body>
 </html>

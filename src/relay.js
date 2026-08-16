@@ -10,6 +10,8 @@ const PAIR_TTL_MS = 10 * 60 * 1000;
 const MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const IMPORT_TTL_MS = 5 * 60 * 1000;
 const ACCESS_TTL_MS = 2 * 60 * 1000;
+const AUDIT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const AUDIT_MAX_PER_DEVICE = 500;
 const DEFAULT_RATE_LIMITS = {
   api: { max: 120, windowMs: 60_000 },
   pairs: { max: 10, windowMs: 60_000 },
@@ -37,6 +39,11 @@ function browserMetadata(value = {}) {
     userAgent: text(value.userAgent), platform: text(value.platform, 100), os: text(value.os, 100),
     architecture: text(value.architecture, 50), browser: text(value.browser, 100), language: text(value.language, 50)
   };
+}
+
+function clientMetadata(value = {}) {
+  const text = (input, limit = 200) => typeof input === "string" ? input.slice(0, limit) : "";
+  return { hostname: text(value.hostname, 100), platform: text(value.platform, 50), release: text(value.release, 100), architecture: text(value.architecture, 50), cliVersion: text(value.cliVersion, 30) };
 }
 
 function clientIp(request) {
@@ -68,6 +75,7 @@ function createStore(directory) {
   let messages = new Map();
   let imports = new Map();
   let accessRequests = new Map();
+  let auditEvents = [];
   let pushSubscriptions = [];
   try {
     const values = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -76,16 +84,17 @@ function createStore(directory) {
     messages = new Map((values.messages || []).map((message) => [message.id, message]));
     imports = new Map((values.imports || []).map((item) => [item.id, item]));
     accessRequests = new Map((values.accessRequests || []).map((item) => [item.id, item]));
+    auditEvents = values.auditEvents || [];
     pushSubscriptions = values.pushSubscriptions || [];
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   function save() {
     const temporary = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()], imports: [...imports.values()], accessRequests: [...accessRequests.values()], pushSubscriptions })}\n`, { mode: 0o600 });
+    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()], imports: [...imports.values()], accessRequests: [...accessRequests.values()], auditEvents, pushSubscriptions })}\n`, { mode: 0o600 });
     fs.renameSync(temporary, file);
   }
-  return { pairs, devices, messages, imports, accessRequests, pushSubscriptions, save };
+  return { pairs, devices, messages, imports, accessRequests, auditEvents, pushSubscriptions, save };
 }
 
 function cleanup(pairs, store) {
@@ -105,9 +114,15 @@ function cleanup(pairs, store) {
   }
   for (const [id, item] of store.accessRequests) {
     if (item.expiresAt <= now) {
+      if (item.status === "pending") store.auditEvents.push({ id: crypto.randomUUID(), deviceId: item.deviceId, requestId: item.id, action: "expired", createdAt: now, domains: item.domains, mode: item.mode });
       store.accessRequests.delete(id);
       changed = true;
     }
+  }
+  const audits = store.auditEvents.filter((event) => event.createdAt > now - AUDIT_TTL_MS);
+  if (audits.length !== store.auditEvents.length) {
+    store.auditEvents.splice(0, store.auditEvents.length, ...audits);
+    changed = true;
   }
   for (const [code, pair] of pairs) {
     if (pair.expiresAt <= now && ![...store.devices.values()].some((device) => device.code === code) && ![...store.messages.values()].some((message) => message.code === code) && ![...store.imports.values()].some((item) => item.code === code)) {
@@ -202,6 +217,15 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
   const notifyDevice = (deviceId, event) => {
     const payload = JSON.stringify(event);
     for (const socket of deviceSockets.get(deviceId) || []) if (socket.readyState === 1) socket.send(payload);
+  };
+  const audit = (deviceId, requestId, action, details = {}) => {
+    store.auditEvents.push({ id: crypto.randomUUID(), deviceId, requestId, action, createdAt: Date.now(), ...details });
+    const deviceEvents = store.auditEvents.filter((event) => event.deviceId === deviceId);
+    if (deviceEvents.length > AUDIT_MAX_PER_DEVICE) {
+      const remove = new Set(deviceEvents.slice(0, deviceEvents.length - AUDIT_MAX_PER_DEVICE).map((event) => event.id));
+      const retained = store.auditEvents.filter((event) => !remove.has(event.id));
+      store.auditEvents.splice(0, store.auditEvents.length, ...retained);
+    }
   };
 
   const server = http.createServer(async (request, response) => {
@@ -301,8 +325,10 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const domains = Array.isArray(input.domains) ? input.domains.map((domain) => domain === "*" ? "*" : isDomain(domain) ? domain.toLowerCase() : null) : [];
       if (!domains.length || domains.includes(null)) return send(response, 400, { error: "At least one valid domain is required." }, origin);
       const now = Date.now();
-      const item = { id: crypto.randomUUID(), code: input.code, deviceId: device.id, domains, status: device.accessPolicy === "confirm" ? "pending" : "approved", mode: device.accessPolicy, createdAt: now, expiresAt: now + ACCESS_TTL_MS };
+      const item = { id: crypto.randomUUID(), code: input.code, deviceId: device.id, domains, status: device.accessPolicy === "confirm" ? "pending" : "approved", mode: device.accessPolicy, client: clientMetadata(input.client), createdAt: now, expiresAt: now + ACCESS_TTL_MS };
       store.accessRequests.set(item.id, item);
+      audit(device.id, item.id, "requested", { domains, mode: item.mode, client: item.client, clientIp: clientIp(request) });
+      if (item.status === "approved") audit(device.id, item.id, "auto-approved", { domains, mode: item.mode });
       store.save();
       notifyDevice(device.id, { type: "access-request", requestId: item.id, domains, mode: item.mode, status: item.status, expiresAt: item.expiresAt });
       return send(response, 201, item, origin);
@@ -337,9 +363,19 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       if (!["approved", "denied"].includes(input.decision)) return send(response, 400, { error: "Decision must be approved or denied." }, origin);
       item.status = input.decision;
       item.decidedAt = Date.now();
+      audit(device.id, item.id, input.decision, { domains: item.domains, mode: item.mode });
       store.save();
       notify(item.code, { type: "access-decision", requestId: item.id, status: item.status });
       return send(response, 200, item, origin);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/device/audit") {
+      const deviceId = url.searchParams.get("deviceId");
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const device = store.devices.get(deviceId);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
+      const events = store.auditEvents.filter((event) => event.deviceId === deviceId).slice(-100).reverse();
+      return send(response, 200, { events, retentionDays: 90, maxEvents: AUDIT_MAX_PER_DEVICE }, origin);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/imports") {
@@ -444,12 +480,14 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       if (!domain) {
         const messages = [...store.messages.values()].filter((item) => item.code === code && (!deviceId || item.deviceId === deviceId));
         access.usedAt = Date.now();
+        audit(deviceId, access.id, "consumed", { domains: access.domains, count: messages.length });
         store.save();
         return send(response, 200, { messages }, origin);
       }
       const message = [...store.messages.values()].reverse().find((item) => item.code === code && item.domain === domain && (!deviceId || item.deviceId === deviceId));
       if (!message) return send(response, 404, { error: "No message found." }, origin);
       access.usedAt = Date.now();
+      audit(deviceId, access.id, "consumed", { domains: [domain], count: 1 });
       store.save();
       return send(response, 200, message, origin);
     }
@@ -472,10 +510,13 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
       const pair = pairs.get(code);
       if (!pair || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      const revokedDeviceIds = new Set([...store.devices.values()].filter((device) => device.code === code).map((device) => device.id));
       for (const [id, device] of store.devices) if (device.code === code) store.devices.delete(id);
       for (const [id, message] of store.messages) if (message.code === code) store.messages.delete(id);
       for (const [id, item] of store.imports) if (item.code === code) store.imports.delete(id);
       for (const [id, item] of store.accessRequests) if (item.code === code) store.accessRequests.delete(id);
+      const audits = store.auditEvents.filter((event) => !revokedDeviceIds.has(event.deviceId));
+      store.auditEvents.splice(0, store.auditEvents.length, ...audits);
       const subscriptions = store.pushSubscriptions.filter((subscription) => subscription.code !== code);
       store.pushSubscriptions.splice(0, store.pushSubscriptions.length, ...subscriptions);
       pairs.delete(code);

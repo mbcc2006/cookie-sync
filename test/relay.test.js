@@ -270,3 +270,37 @@ test("serves a no-store pairing page only for valid pair codes", async (context)
   const invalid = await fetch(`${url}/?pair=INVALID`);
   assert.match(await invalid.text(), /无效或已过期/);
 });
+
+test("provides an isolated metadata-only access audit to each browser", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const claim = () => json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const first = await claim();
+  const second = await claim();
+  const cliHeaders = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const access = await json(url, "/v1/access-requests", {
+    method: "POST", headers: { ...cliHeaders, "cf-connecting-ip": "203.0.113.21" },
+    body: JSON.stringify({ code: pair.value.code, deviceId: first.value.deviceId, domains: ["relay.ivjn.us"], client: { hostname: "automation-01", platform: "linux", architecture: "x64", cliVersion: "0.5.0" } })
+  });
+  const firstHeaders = { authorization: `Bearer ${first.value.uploadToken}` };
+  const firstAudit = await json(url, `/v1/device/audit?deviceId=${first.value.deviceId}`, { headers: firstHeaders });
+  assert.equal(firstAudit.response.status, 200);
+  assert.deepEqual(firstAudit.value.events.map((event) => event.action), ["auto-approved", "requested"]);
+  assert.equal(firstAudit.value.events[1].client.hostname, "automation-01");
+  assert.equal(firstAudit.value.events[1].clientIp, "203.0.113.21");
+  assert.equal(JSON.stringify(firstAudit.value).includes(pair.value.readToken), false);
+  assert.equal(JSON.stringify(firstAudit.value).includes("envelope"), false);
+  const secondAudit = await json(url, `/v1/device/audit?deviceId=${second.value.deviceId}`, { headers: { authorization: `Bearer ${second.value.uploadToken}` } });
+  assert.deepEqual(secondAudit.value.events, []);
+  const blocked = await json(url, `/v1/device/audit?deviceId=${first.value.deviceId}`, { headers: { authorization: `Bearer ${second.value.uploadToken}` } });
+  assert.equal(blocked.response.status, 401);
+  assert.equal(access.value.deviceId, first.value.deviceId);
+});

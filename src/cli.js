@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import os from "node:os";
 import process from "node:process";
 import { chromium } from "playwright-core";
 import WebSocket from "ws";
@@ -8,6 +9,7 @@ import { chromeLaunchArgs, findChrome } from "./platform.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
+const CLI_VERSION = "0.6.0";
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
@@ -80,7 +82,10 @@ async function requestBrowserAccess(browser, domains) {
   const { code, readToken } = pairCredentials();
   const access = await request("/v1/access-requests", {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
-    body: JSON.stringify({ code, deviceId: browser.id, domains })
+    body: JSON.stringify({
+      code, deviceId: browser.id, domains,
+      client: { hostname: os.hostname(), platform: os.platform(), release: os.release(), architecture: os.arch(), cliVersion: CLI_VERSION }
+    })
   });
   if (access.status === "approved") return access.id;
   console.log(`Waiting for ${browser.alias || browser.id.slice(0, 8)} to approve Cookie access...`);
@@ -141,10 +146,12 @@ async function createPair() {
     body: JSON.stringify({ publicKey: identity.publicKey })
   });
   writePrivateJson("pair.json", pair);
+  const pairUrl = `${relay}/?pair=${encodeURIComponent(pair.code)}`;
   console.log(`Pair code: ${pair.code}`);
   console.log(`Relay: ${relay}`);
   console.log(`Expires: ${new Date(pair.expiresAt).toISOString()}`);
-  console.log(`Open in Chrome: ${relay}/?pair=${encodeURIComponent(pair.code)}`);
+  console.log(`Pair URL: ${pairUrl}`);
+  console.log("Open the Pair URL in Chrome to prefill and open the CookieSync extension.");
 }
 
 async function pull(domain, browserSelector) {

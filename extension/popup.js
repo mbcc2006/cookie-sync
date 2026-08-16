@@ -49,17 +49,42 @@ async function setPolicy() {
   status(accessPolicy === "confirm" ? "每次 CLI 读取前都需要你确认。" : "CLI 读取时会通知你，但默认不阻塞。 ");
 }
 
+function eventLabel(action) {
+  return { requested: "CLI 发起读取", "auto-approved": "默认自动允许", approved: "你已允许", denied: "你已拒绝", consumed: "Cookie 已被读取", expired: "请求已过期" }[action] || action;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+async function loadAudit() {
+  const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
+  if (!deviceId) return;
+  const response = await fetch(`${relay}/v1/device/audit?deviceId=${encodeURIComponent(deviceId)}`, { headers: { authorization: `Bearer ${uploadToken}` } });
+  if (!response.ok) throw new Error((await response.json()).error || "Failed to load audit log.");
+  const { events } = await response.json();
+  $("audit").innerHTML = events.length ? events.map((event) => {
+    const host = event.client?.hostname ? ` · ${event.client.hostname}` : "";
+    const source = event.clientIp ? ` · ${event.clientIp}` : "";
+    const domains = (event.domains || []).join(", ") || "-";
+    return `<article class="event ${escapeHtml(event.action)}"><b>${escapeHtml(eventLabel(event.action))}</b><small>${escapeHtml(domains + host + source)}</small><time>${escapeHtml(new Date(event.createdAt).toLocaleString())}</time></article>`;
+  }).join("") : "<p>暂无访问记录。</p>";
+}
+
 chrome.storage.local.get(["relay", "deviceId", "accessPolicy", "pendingPair"]).then((saved) => {
   $("relay").value = saved.relay || "https://relay.ivjn.us";
   if (saved.deviceId) {
     $("code").disabled = true;
     $("sync").textContent = "Sync all permitted domains now";
     status("This browser is authorized for continuous synchronization.");
+    $("audit-section").hidden = false;
+    loadAudit().catch((error) => status(`Error: ${error.message}`));
   }
   $("policy").value = saved.accessPolicy || "notify";
   if (saved.pendingPair && !saved.deviceId) $("code").value = saved.pendingPair;
 });
 $("policy").addEventListener("change", () => setPolicy().catch((error) => status(`Error: ${error.message}`)));
+$("refresh-audit").addEventListener("click", () => loadAudit().catch((error) => status(`Error: ${error.message}`)));
 $("sync").addEventListener("click", () => {
   const action = $("code").disabled ? chrome.runtime.sendMessage({ type: "sync-all" }) : connect();
   action.catch((error) => status(`Error: ${error.message}`));
