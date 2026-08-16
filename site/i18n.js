@@ -149,10 +149,25 @@
       ja: "CLI は --reason で Cookie が必要な理由を説明できます。理由は Chrome の通知、監査ログ、一度限りのコンソールインポート出力に表示されます。",
       ko: "CLI는 --reason으로 쿠키가 필요한 이유를 설명할 수 있습니다. 사유는 Chrome 알림, 감사 로그, 1회성 콘솔 가져오기 출력에 표시됩니다."
     },
+    "feature9.title": { en: "Ready-to-use auth state", zh: "直接生成登录状态", ja: "すぐ使える認証状態", ko: "바로 쓰는 인증 상태" },
+    "feature9.body": {
+      en: "Export synced cookies as standard Playwright storageState that tests and automation jobs can load directly.",
+      zh: "将同步的 Cookie 导出为标准 Playwright storageState，测试和自动化任务可直接加载。",
+      ja: "同期した Cookie を標準の Playwright storageState として出力し、テストや自動化ジョブから直接読み込めます。",
+      ko: "동기화된 쿠키를 표준 Playwright storageState로 내보내 테스트와 자동화 작업에서 바로 불러올 수 있습니다."
+    },
+    "feature10.title": { en: "JSON and cookies.txt", zh: "JSON 与 cookies.txt", ja: "JSON と cookies.txt", ko: "JSON 및 cookies.txt" },
+    "feature10.body": {
+      en: "Output raw cookie JSON or Netscape cookies.txt for scripts, curl, wget, and other tools.",
+      zh: "输出原始 Cookie JSON 或 Netscape cookies.txt，直接交给脚本、curl、wget 和其他工具。",
+      ja: "生の Cookie JSON または Netscape cookies.txt を出力し、スクリプト、curl、wget などで利用できます。",
+      ko: "원본 쿠키 JSON 또는 Netscape cookies.txt를 출력해 스크립트, curl, wget 등의 도구에서 사용할 수 있습니다."
+    },
     "quickstart.title": { en: "Start syncing now", zh: "现在开始同步", ja: "今すぐ同期を始める", ko: "지금 동기화 시작하기" },
     "tabs.install": { en: "Install", zh: "安装", ja: "インストール", ko: "설치" },
     "tabs.pair": { en: "Pair", zh: "配对", ja: "ペアリング", ko: "페어링" },
     "tabs.use": { en: "Use", zh: "使用", ja: "使用", ko: "사용" },
+    "tabs.export": { en: "Export", zh: "导出", ja: "エクスポート", ko: "내보내기" },
     "tabs.revoke": { en: "Revoke", zh: "撤销", ja: "取り消し", ko: "취소" },
     "copy.button": { en: "Copy", zh: "复制", ja: "コピー", ko: "복사" },
     "copy.copied": { en: "Copied", zh: "已复制", ja: "コピーしました", ko: "복사됨" },
@@ -164,6 +179,8 @@
     "qs.use.c1": { en: "# View browser identity, UA, and system info", zh: "# 查看浏览器身份、UA 和系统信息", ja: "# ブラウザのアイデンティティ、UA、システム情報を確認", ko: "# 브라우저 아이덴티티, UA, 시스템 정보 확인" },
     "qs.use.c2": { en: "# Set an alias for a browser", zh: "# 为浏览器设置别名", ja: "# ブラウザにエイリアスを設定", ko: "# 브라우저에 별칭 설정" },
     "qs.use.c3": { en: "# Pull and use cookies from a specific browser", zh: "# 拉取并使用指定浏览器的 Cookie", ja: "# 特定のブラウザの Cookie を取得して使用", ko: "# 특정 브라우저의 쿠키를 가져와 사용" },
+    "qs.export.c1": { en: "# Create auth state that Playwright can load directly", zh: "# 生成 Playwright 可直接加载的登录状态", ja: "# Playwright が直接読み込める認証状態を生成", ko: "# Playwright에서 바로 불러올 수 있는 인증 상태 생성" },
+    "qs.export.c2": { en: "# Export raw JSON or Netscape cookies.txt", zh: "# 输出原始 JSON 或 Netscape cookies.txt", ja: "# 生の JSON または Netscape cookies.txt を出力", ko: "# 원본 JSON 또는 Netscape cookies.txt 내보내기" },
     "qs.console.c1": { en: "# Create a five-minute single-use import and print the Console script", zh: "# 创建五分钟一次性导入并打印 Console 脚本", ja: "# 5 分間有効な一度限りのインポートを作成し、コンソールスクリプトを出力", ko: "# 5분간 유효한 1회성 가져오기를 생성하고 콘솔 스크립트 출력" },
     "qs.console.c2": { en: "# Only page-visible, non-HttpOnly cookies are supported", zh: "# 仅支持页面可见的非 HttpOnly Cookie", ja: "# ページ上に見える HttpOnly 以外の Cookie のみ対応", ko: "# 페이지에 보이는 HttpOnly가 아닌 쿠키만 지원" },
     "qs.revoke.c1": { en: "# Revoke every browser and live subscription under this pairing", zh: "# 撤销当前配对下的所有浏览器和实时订阅", ja: "# このペアリングに属するすべてのブラウザとライブ購読を取り消し", ko: "# 이 페어링에 속한 모든 브라우저와 실시간 구독 취소" },

@@ -37,7 +37,7 @@
         <p class="lead" data-i18n="hero.lead">浏览器只需授权一次，CookieSync 就会将所有允许域名的 Cookie 端到端加密，同步给另一台设备上的 CLI 和无头 Chrome。</p>
         <div class="hero-actions">
           <a class="button primary" href="#quickstart" data-i18n="hero.ctaPrimary">开始配置</a>
-          <button class="button ghost copy-command" data-copy="npm install -g github:mbcc2006/cookie-sync" data-i18n="hero.ctaCopy">复制安装命令</button>
+          <button class="button ghost copy-command" data-copy="npm install -g @ivjnus/cookie-sync" data-i18n="hero.ctaCopy">复制安装命令</button>
         </div>
         <div class="compat"><span>Windows</span><span>macOS</span><span>Linux</span><span>Chrome MV3</span></div>
       </div>
@@ -124,6 +124,8 @@
         <article class="feature-card reveal delay-1"><span>06 / SCOPE</span><h3 data-i18n="feature6.title">域名级访问范围</h3><p data-i18n="feature6.body">读取请求绑定浏览器和域名，最长两分钟。拒绝、过期或已消费的请求无法再次获得加密快照。</p><code>403 until approved</code></article>
         <article class="feature-card reveal"><span>07 / AUDIT</span><h3 data-i18n="feature7.title">浏览器端读取审计</h3><p data-i18n="feature7.body">扩展可查看请求、批准、拒绝、过期和实际消费记录，以及 CLI 主机、系统和来源 IP。审计不包含 Cookie 数据。</p><code>90 days / 500 events</code></article>
         <article class="feature-card reveal delay-1"><span>08 / REASON</span><h3 data-i18n="feature8.title">每次读取说明用途</h3><p data-i18n="feature8.body">CLI 可通过 --reason 说明为什么需要 Cookie。原因会显示在 Chrome 通知、审计记录和一次性 Console 导入输出中。</p><code>--reason "Smoke test"</code></article>
+        <article class="feature-card reveal"><span>09 / PLAYWRIGHT</span><h3 data-i18n="feature9.title">直接生成登录状态</h3><p data-i18n="feature9.body">将同步的 Cookie 导出为标准 Playwright storageState，测试和自动化任务可直接加载。</p><code>cookie-sync playwright github.com</code></article>
+        <article class="feature-card reveal delay-1"><span>10 / PORTABLE</span><h3 data-i18n="feature10.title">JSON 与 cookies.txt</h3><p data-i18n="feature10.body">输出原始 Cookie JSON 或 Netscape cookies.txt，直接交给脚本、curl、wget 和其他工具。</p><code>--format json|txt</code></article>
       </div>
     </section>
 
@@ -133,14 +135,14 @@
         <h2 data-i18n="quickstart.title">现在开始同步</h2>
       </div>
       <div class="commands reveal delay-1">
-        <div class="tabs" role="tablist"><button class="active" data-tab="install" data-i18n="tabs.install">安装</button><button data-tab="pair" data-i18n="tabs.pair">配对</button><button data-tab="use" data-i18n="tabs.use">使用</button><button data-tab="console">Console</button><button data-tab="revoke" data-i18n="tabs.revoke">撤销</button></div>
+        <div class="tabs" role="tablist"><button class="active" data-tab="install" data-i18n="tabs.install">安装</button><button data-tab="pair" data-i18n="tabs.pair">配对</button><button data-tab="use" data-i18n="tabs.use">使用</button><button data-tab="export" data-i18n="tabs.export">导出</button><button data-tab="console">Console</button><button data-tab="revoke" data-i18n="tabs.revoke">撤销</button></div>
         <div class="command-panel" id="install">
           <pre><span data-i18n="qs.install.c1"># 需要 Node.js 20+</span>
-npm install -g github:mbcc2006/cookie-sync
+npm install -g @ivjnus/cookie-sync
 
 <span data-i18n="qs.install.c2"># 检查默认 relay 和数据目录</span>
 cookie-sync status</pre>
-          <button class="mini-copy" data-copy="npm install -g github:mbcc2006/cookie-sync" data-i18n="copy.button">复制</button>
+          <button class="mini-copy" data-copy="npm install -g @ivjnus/cookie-sync" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="pair">
           <pre><span data-i18n="qs.pair.c1"># 创建十分钟有效的配对码</span>
@@ -161,6 +163,15 @@ cookie-sync browser set 93cd5c4f --alias "Work laptop"
 cookie-sync pull-all --browser "Work laptop"
 cookie-sync browse https://github.com/ --browser "Work laptop"</pre>
           <button class="mini-copy" data-copy="cookie-sync browsers" data-i18n="copy.button">复制</button>
+        </div>
+        <div class="command-panel hidden" id="export">
+          <pre><span data-i18n="qs.export.c1"># 生成 Playwright 可直接加载的登录状态</span>
+cookie-sync playwright github.com --out playwright/.auth/github.json
+
+<span data-i18n="qs.export.c2"># 输出原始 JSON 或 Netscape cookies.txt</span>
+cookie-sync cookies github.com --format json --out cookies.json
+cookie-sync cookies github.com --format txt --out cookies.txt</pre>
+          <button class="mini-copy" data-copy="cookie-sync playwright github.com --out playwright/.auth/github.json" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="console">
           <pre><span data-i18n="qs.console.c1"># 创建五分钟一次性导入并打印 Console 脚本</span>

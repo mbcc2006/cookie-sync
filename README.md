@@ -11,6 +11,17 @@ CookieSync transfers selected browser cookies from a Chrome extension on one dev
 
 The CLI and extension use the hosted relay by default. Run `cookie-sync pair`, then open the generated `https://relay.ivjn.us/?pair=...` URL in Chrome to prefill the extension.
 
+## Install the CLI
+
+CookieSync requires Node.js 20 or newer and is published on npm:
+
+```bash
+npm install -g @ivjnus/cookie-sync
+cookie-sync status
+```
+
+The installed executable remains `cookie-sync`. The npm package is scoped as `@ivjnus/cookie-sync`.
+
 ## Run the relay
 
 The relay must be reachable by both the Chrome device and the CLI machine. Put it behind HTTPS in production. It persists encrypted messages in `./data` for up to seven days and deletes a message after a successful CLI pull.
@@ -145,7 +156,7 @@ cookie-sync browse https://github.com/ --browser console
 
 Console JavaScript cannot access `HttpOnly` cookies, Cookie path attributes, or cookies hidden from the current page. Many authentication sessions depend on `HttpOnly`, so this is a limited fallback rather than a replacement for the extension. A strict site Content Security Policy may also block the hosted script.
 
-The CLI runs on Windows, macOS, and Linux with Node.js 20 or newer. Install it with `npm install -g @ivjnus/cookie-sync`, then use `cookie-sync`. State is held in the native user-data directory: `$XDG_STATE_HOME/cookie-sync` (Linux), `~/Library/Application Support/cookie-sync` (macOS), or `%APPDATA%\\cookie-sync` (Windows). `browse` discovers Chrome/Chromium on each platform and injects the stored Cookie snapshot into an isolated Playwright context. Set `CHROME_PATH` when Chrome is installed elsewhere. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
+The CLI runs on Windows, macOS, and Linux. State is held in the native user-data directory: `$XDG_STATE_HOME/cookie-sync` (Linux), `~/Library/Application Support/cookie-sync` (macOS), or `%APPDATA%\\cookie-sync` (Windows). `browse` discovers Chrome/Chromium on each platform and injects the stored Cookie snapshot into an isolated Playwright context. Set `CHROME_PATH` when Chrome is installed elsewhere. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
 
 Revoke all browsers authorized by the current pairing:
 
