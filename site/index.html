@@ -37,7 +37,7 @@
         <p class="lead" data-i18n="hero.lead">浏览器只需授权一次，CookieSync 就会将所有允许域名的 Cookie 端到端加密，同步给另一台设备上的 CLI 和无头 Chrome。</p>
         <div class="hero-actions">
           <a class="button primary" href="#quickstart" data-i18n="hero.ctaPrimary">开始配置</a>
-          <button class="button ghost copy-command" data-copy="npm install -g @ivjnus/cookie-sync" data-i18n="hero.ctaCopy">复制安装命令</button>
+          <button class="button ghost copy-command" data-copy="npx @ivjnus/cookie-sync status" data-i18n="hero.ctaCopy">复制运行命令</button>
         </div>
         <div class="compat"><span>Windows</span><span>macOS</span><span>Linux</span><span>Chrome MV3</span></div>
       </div>
@@ -45,11 +45,11 @@
       <div class="terminal reveal delay-1" data-i18n-aria="terminal.ariaLabel" aria-label="CookieSync 终端演示">
         <div class="terminal-head">
           <div class="dots"><i></i><i></i><i></i></div>
-          <span>cookie-sync / pair</span>
+          <span>npx / cookie-sync / pair</span>
           <span class="live"><i></i> <span data-i18n="terminal.relayOnline">relay online</span></span>
         </div>
         <div class="terminal-body">
-          <p><span class="prompt">$</span> cookie-sync pair</p>
+          <p><span class="prompt">$</span> npx @ivjnus/cookie-sync pair</p>
           <p class="muted" data-i18n="terminal.pairCodeLabel">Pair code</p>
           <p class="pair-code">SKHZ-DMGY-2WKP</p>
           <p class="muted"><span data-i18n="terminal.relayLabel">Relay</span>&nbsp;&nbsp;&nbsp;&nbsp; https://relay.ivjn.us</p>
@@ -59,7 +59,7 @@
             <p><time>12:04:17</time><span class="ok">SYNC</span> console.cloud.google.com <small data-i18n="terminal.cookies8">8 cookies</small></p>
             <p><time>12:04:18</time><span class="ok">SYNC</span> ivjn.cn <small data-i18n="terminal.cookies3">3 cookies</small></p>
           </div>
-          <p class="cursor"><span class="prompt">$</span> cookie-sync pull-all <i></i></p>
+          <p class="cursor"><span class="prompt">$</span> npx @ivjnus/cookie-sync pull-all <i></i></p>
         </div>
       </div>
     </section>
@@ -80,9 +80,9 @@
         <p data-i18n="workflow.lead">桌面浏览器负责认证，远程设备负责自动化。CookieSync 只传递完成任务所需的登录状态。</p>
       </div>
       <div class="steps">
-        <article class="step reveal"><b>01</b><div class="step-icon">⌘</div><h3 data-i18n="workflow.step1.title">CLI 创建配对</h3><p data-i18n="workflow.step1.body">在无头设备运行配对命令，生成 10 分钟有效的一次性验证码。</p><code>cookie-sync pair</code></article>
+        <article class="step reveal"><b>01</b><div class="step-icon">⌘</div><h3 data-i18n="workflow.step1.title">CLI 创建配对</h3><p data-i18n="workflow.step1.body">在无头设备运行配对命令，生成 10 分钟有效的一次性验证码。</p><code>npx @ivjnus/cookie-sync pair</code></article>
         <article class="step reveal delay-1"><b>02</b><div class="step-icon">◎</div><h3 data-i18n="workflow.step2.title">扩展授权一次</h3><p data-i18n="workflow.step2.body">在 Chrome 扩展输入验证码。扩展领取只能上传、不能读取的设备令牌。</p><code>Chrome → CookieSync</code></article>
-        <article class="step reveal delay-2"><b>03</b><div class="step-icon">↯</div><h3 data-i18n="workflow.step3.title">持续自动同步</h3><p data-i18n="workflow.step3.body">Cookie 变化、浏览器启动及定时任务都会触发加密同步，无需重复操作。</p><code>cookie-sync pull-all</code></article>
+        <article class="step reveal delay-2"><b>03</b><div class="step-icon">↯</div><h3 data-i18n="workflow.step3.title">持续自动同步</h3><p data-i18n="workflow.step3.body">Cookie 变化、浏览器启动及定时任务都会触发加密同步，无需重复操作。</p><code>npx @ivjnus/cookie-sync pull-all</code></article>
       </div>
     </section>
 
@@ -116,17 +116,17 @@
         <p data-i18n="features.lead">从浏览器身份管理到实时通知，CookieSync 为持续运行的远程自动化提供完整链路。</p>
       </div>
       <div class="feature-grid">
-        <article class="feature-card reveal"><span>01 / IDENTITIES</span><h3 data-i18n="feature1.title">多浏览器管理</h3><p data-i18n="feature1.body">每个 Chrome 配置文件独立保存。CLI 可查看浏览器 ID、UA、系统、架构和最后在线时间，并设置别名与备注。</p><code>cookie-sync browsers</code></article>
-        <article class="feature-card reveal delay-1"><span>02 / REALTIME</span><h3 data-i18n="feature2.title">WebSocket 实时通知</h3><p data-i18n="feature2.body">Cookie 更新后立即唤醒正在等待的 CLI；连接中断时自动回退轮询。Web Push 只发送无敏感内容的更新元数据。</p><code>cookie-sync wait github.com</code></article>
-        <article class="feature-card reveal"><span>03 / FALLBACK</span><h3 data-i18n="feature3.title">一次性 Console 导入</h3><p data-i18n="feature3.body">无法安装扩展时，创建五分钟单次会话，从页面 Console 加密导入当前可见 Cookie。</p><code>cookie-sync console github.com</code></article>
+        <article class="feature-card reveal"><span>01 / IDENTITIES</span><h3 data-i18n="feature1.title">多浏览器管理</h3><p data-i18n="feature1.body">每个 Chrome 配置文件独立保存。CLI 可查看浏览器 ID、UA、系统、架构和最后在线时间，并设置别名与备注。</p><code>npx @ivjnus/cookie-sync browsers</code></article>
+        <article class="feature-card reveal delay-1"><span>02 / REALTIME</span><h3 data-i18n="feature2.title">WebSocket 实时通知</h3><p data-i18n="feature2.body">Cookie 更新后立即唤醒正在等待的 CLI；连接中断时自动回退轮询。Web Push 只发送无敏感内容的更新元数据。</p><code>npx @ivjnus/cookie-sync wait github.com</code></article>
+        <article class="feature-card reveal"><span>03 / FALLBACK</span><h3 data-i18n="feature3.title">一次性 Console 导入</h3><p data-i18n="feature3.body">无法安装扩展时，创建五分钟单次会话，从页面 Console 加密导入当前可见 Cookie。</p><code>npx @ivjnus/cookie-sync console github.com</code></article>
         <article class="feature-card reveal delay-1"><span>04 / DEFENSE</span><h3 data-i18n="feature4.title">限流与最小权限</h3><p data-i18n="feature4.body">配对、设备认领和导入使用独立限流；上传令牌不能读取数据，中继仅保存令牌哈希与加密快照。</p><code>429 + Retry-After</code></article>
         <article class="feature-card reveal"><span>05 / CONSENT</span><h3 data-i18n="feature5.title">读取通知与确认</h3><p data-i18n="feature5.body">默认允许 CLI 读取但发送系统通知；也可切换为每次读取都必须在 Chrome 中明确允许。批准请求仅可使用一次。</p><code>notify / confirm</code></article>
         <article class="feature-card reveal delay-1"><span>06 / SCOPE</span><h3 data-i18n="feature6.title">域名级访问范围</h3><p data-i18n="feature6.body">读取请求绑定浏览器和域名，最长两分钟。拒绝、过期或已消费的请求无法再次获得加密快照。</p><code>403 until approved</code></article>
         <article class="feature-card reveal"><span>07 / AUDIT</span><h3 data-i18n="feature7.title">浏览器端读取审计</h3><p data-i18n="feature7.body">扩展可查看请求、批准、拒绝、过期和实际消费记录，以及 CLI 主机、系统和来源 IP。审计不包含 Cookie 数据。</p><code>90 days / 500 events</code></article>
         <article class="feature-card reveal delay-1"><span>08 / REASON</span><h3 data-i18n="feature8.title">每次读取说明用途</h3><p data-i18n="feature8.body">CLI 可通过 --reason 说明为什么需要 Cookie。原因会显示在 Chrome 通知、审计记录和一次性 Console 导入输出中。</p><code>--reason "Smoke test"</code></article>
-        <article class="feature-card reveal"><span>09 / PLAYWRIGHT</span><h3 data-i18n="feature9.title">直接生成登录状态</h3><p data-i18n="feature9.body">将同步的 Cookie 导出为标准 Playwright storageState，测试和自动化任务可直接加载。</p><code>cookie-sync playwright github.com</code></article>
+        <article class="feature-card reveal"><span>09 / PLAYWRIGHT</span><h3 data-i18n="feature9.title">直接生成登录状态</h3><p data-i18n="feature9.body">将同步的 Cookie 导出为标准 Playwright storageState，测试和自动化任务可直接加载。</p><code>npx @ivjnus/cookie-sync playwright github.com</code></article>
         <article class="feature-card reveal delay-1"><span>10 / PORTABLE</span><h3 data-i18n="feature10.title">JSON 与 cookies.txt</h3><p data-i18n="feature10.body">输出原始 Cookie JSON 或 Netscape cookies.txt，直接交给脚本、curl、wget 和其他工具。</p><code>--format json|txt</code></article>
-        <article class="feature-card reveal"><span>11 / REMOTE OPEN</span><h3 data-i18n="feature11.title">从 CLI 打开网页</h3><p data-i18n="feature11.body">向在线的指定浏览器发送 HTTP/HTTPS URL，由扩展创建新标签页并向 CLI 确认结果。</p><code>cookie-sync open https://cookie-sync.ivjn.us/</code></article>
+        <article class="feature-card reveal"><span>11 / REMOTE OPEN</span><h3 data-i18n="feature11.title">从 CLI 打开网页</h3><p data-i18n="feature11.body">向在线的指定浏览器发送 HTTP/HTTPS URL，由扩展创建新标签页并向 CLI 确认结果。</p><code>npx @ivjnus/cookie-sync open https://cookie-sync.ivjn.us/</code></article>
       </div>
     </section>
 
@@ -136,61 +136,61 @@
         <h2 data-i18n="quickstart.title">现在开始同步</h2>
       </div>
       <div class="commands reveal delay-1">
-        <div class="tabs" role="tablist"><button class="active" data-tab="install" data-i18n="tabs.install">安装</button><button data-tab="pair" data-i18n="tabs.pair">配对</button><button data-tab="use" data-i18n="tabs.use">使用</button><button data-tab="export" data-i18n="tabs.export">导出</button><button data-tab="console">Console</button><button data-tab="revoke" data-i18n="tabs.revoke">撤销</button></div>
+        <div class="tabs" role="tablist"><button class="active" data-tab="install" data-i18n="tabs.install">运行</button><button data-tab="pair" data-i18n="tabs.pair">配对</button><button data-tab="use" data-i18n="tabs.use">使用</button><button data-tab="export" data-i18n="tabs.export">导出</button><button data-tab="console">Console</button><button data-tab="revoke" data-i18n="tabs.revoke">撤销</button></div>
         <div class="command-panel" id="install">
-          <pre><span data-i18n="qs.install.c1"># 需要 Node.js 20+</span>
-npm install -g @ivjnus/cookie-sync
+          <pre><span data-i18n="qs.install.c1"># 需要 Node.js 20+，无需全局安装</span>
+npx @ivjnus/cookie-sync status
 
-<span data-i18n="qs.install.c2"># 检查默认 relay 和数据目录</span>
-cookie-sync status</pre>
-          <button class="mini-copy" data-copy="npm install -g @ivjnus/cookie-sync" data-i18n="copy.button">复制</button>
+<span data-i18n="qs.install.c2"># 经常使用时可选择全局安装</span>
+npm install -g @ivjnus/cookie-sync</pre>
+          <button class="mini-copy" data-copy="npx @ivjnus/cookie-sync status" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="pair">
           <pre><span data-i18n="qs.pair.c1"># 创建十分钟有效的配对码</span>
-cookie-sync pair
+npx @ivjnus/cookie-sync pair
 
 <span data-i18n="qs.pair.c2"># 在 Chrome 扩展中输入配对码并授权一次</span>
 <span data-i18n="qs.pair.c3"># 后续 Cookie 变化会自动加密同步</span></pre>
-          <button class="mini-copy" data-copy="cookie-sync pair" data-i18n="copy.button">复制</button>
+          <button class="mini-copy" data-copy="npx @ivjnus/cookie-sync pair" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="use">
           <pre><span data-i18n="qs.use.c1"># 查看浏览器身份、UA 和系统信息</span>
-cookie-sync browsers
+npx @ivjnus/cookie-sync browsers
 
 <span data-i18n="qs.use.c2"># 为浏览器设置别名</span>
-cookie-sync browser set 93cd5c4f --alias "Work laptop"
+npx @ivjnus/cookie-sync browser set 93cd5c4f --alias "Work laptop"
 
 <span data-i18n="qs.use.c3"># 拉取并使用指定浏览器的 Cookie</span>
-cookie-sync pull-all --browser "Work laptop"
-cookie-sync browse https://github.com/ --browser "Work laptop"
+npx @ivjnus/cookie-sync pull-all --browser "Work laptop"
+npx @ivjnus/cookie-sync browse https://github.com/ --browser "Work laptop"
 
 <span data-i18n="qs.use.c4"># 在指定浏览器中远程打开网页</span>
-cookie-sync open https://cookie-sync.ivjn.us/ --browser "Work laptop"</pre>
-          <button class="mini-copy" data-copy="cookie-sync browsers" data-i18n="copy.button">复制</button>
+npx @ivjnus/cookie-sync open https://cookie-sync.ivjn.us/ --browser "Work laptop"</pre>
+          <button class="mini-copy" data-copy="npx @ivjnus/cookie-sync browsers" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="export">
           <pre><span data-i18n="qs.export.c1"># 生成 Playwright 可直接加载的登录状态</span>
-cookie-sync playwright github.com --out playwright/.auth/github.json
+npx @ivjnus/cookie-sync playwright github.com --out playwright/.auth/github.json
 
 <span data-i18n="qs.export.c2"># 输出原始 JSON 或 Netscape cookies.txt</span>
-cookie-sync cookies github.com --format json --out cookies.json
-cookie-sync cookies github.com --format txt --out cookies.txt</pre>
-          <button class="mini-copy" data-copy="cookie-sync playwright github.com --out playwright/.auth/github.json" data-i18n="copy.button">复制</button>
+npx @ivjnus/cookie-sync cookies github.com --format json --out cookies.json
+npx @ivjnus/cookie-sync cookies github.com --format txt --out cookies.txt</pre>
+          <button class="mini-copy" data-copy="npx @ivjnus/cookie-sync playwright github.com --out playwright/.auth/github.json" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="console">
           <pre><span data-i18n="qs.console.c1"># 自动配对并输出一个五分钟有效的 JavaScript 导入 URL</span>
-cookie-sync console github.com
+npx @ivjnus/cookie-sync console github.com
 
 <span data-i18n="qs.console.c2"># 仅支持页面可见的非 HttpOnly Cookie</span>
-cookie-sync browse https://github.com/ --browser console</pre>
-          <button class="mini-copy" data-copy="cookie-sync console github.com" data-i18n="copy.button">复制</button>
+npx @ivjnus/cookie-sync browse https://github.com/ --browser console</pre>
+          <button class="mini-copy" data-copy="npx @ivjnus/cookie-sync console github.com" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="revoke">
           <pre><span data-i18n="qs.revoke.c1"># 撤销当前配对下的所有浏览器和实时订阅</span>
-cookie-sync revoke
+npx @ivjnus/cookie-sync revoke
 
 <span data-i18n="qs.revoke.c2"># 浏览器丢失或授权泄漏时立即执行</span></pre>
-          <button class="mini-copy" data-copy="cookie-sync revoke" data-i18n="copy.button">复制</button>
+          <button class="mini-copy" data-copy="npx @ivjnus/cookie-sync revoke" data-i18n="copy.button">复制</button>
         </div>
       </div>
     </section>

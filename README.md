@@ -9,18 +9,22 @@ CookieSync transfers selected browser cookies from a Chrome extension on one dev
 - Relay health check: https://relay.ivjn.us/healthz
 - Source repository: https://github.com/mbcc2006/cookie-sync
 
-The CLI and extension use the hosted relay by default. Run `cookie-sync pair`, then open the generated `https://relay.ivjn.us/?pair=...` URL in Chrome to prefill the extension.
+The CLI and extension use the hosted relay by default. Run `npx @ivjnus/cookie-sync pair`, then open the generated `https://relay.ivjn.us/?pair=...` URL in Chrome to prefill the extension.
 
-## Install the CLI
+## Run the CLI
 
-CookieSync requires Node.js 20 or newer and is published on npm:
+CookieSync requires Node.js 20 or newer. Run it directly with `npx`; no global installation is required, and state persists in the normal CookieSync state directory between runs:
+
+```bash
+npx @ivjnus/cookie-sync status
+```
+
+For frequent use, global installation remains optional:
 
 ```bash
 npm install -g @ivjnus/cookie-sync
 cookie-sync status
 ```
-
-The installed executable remains `cookie-sync`. The npm package is scoped as `@ivjnus/cookie-sync`.
 
 ## Run the relay
 
@@ -44,7 +48,7 @@ COOKIE_SYNC_ALLOWED_ORIGINS=chrome-extension://YOUR_EXTENSION_ID npm start
 On the CLI machine:
 
 ```bash
-cookie-sync pair
+npx @ivjnus/cookie-sync pair
 ```
 
 The command prints a clickable `Pair URL`, for example `https://relay.ivjn.us/?pair=...`. Open it in Chrome to validate the short-lived code, prefill the installed CookieSync extension, and attempt to open its popup. If Chrome blocks automatic popup opening, click the CookieSync toolbar icon; the pair code remains prefilled.
@@ -54,21 +58,21 @@ Load `extension/` as an unpacked extension in `chrome://extensions`, enter the r
 Fetch the encrypted snapshot on the CLI machine:
 
 ```bash
-cookie-sync pull github.com
-cookie-sync browse https://github.com/
+npx @ivjnus/cookie-sync pull github.com
+npx @ivjnus/cookie-sync browse https://github.com/
 ```
 
 Fetch every domain currently waiting on the relay:
 
 ```bash
-cookie-sync pull-all
+npx @ivjnus/cookie-sync pull-all
 ```
 
 Open a URL in the paired Chrome browser from the CLI:
 
 ```bash
-cookie-sync open https://cookie-sync.ivjn.us/
-cookie-sync open https://cookie-sync.ivjn.us/#quickstart --browser "Work laptop"
+npx @ivjnus/cookie-sync open https://cookie-sync.ivjn.us/
+npx @ivjnus/cookie-sync open https://cookie-sync.ivjn.us/#quickstart --browser "Work laptop"
 ```
 
 The target browser must be online with the extension running. Only `http://` and `https://` URLs are accepted. The relay forwards the command over the authenticated device WebSocket without storing the URL and waits for the extension to confirm that it created the tab.
@@ -76,7 +80,7 @@ The target browser must be online with the extension running. Only `http://` and
 Export cookies as a Playwright `storageState` file and use it in a test or config:
 
 ```bash
-cookie-sync playwright github.com --out playwright/.auth/github.json
+npx @ivjnus/cookie-sync playwright github.com --out playwright/.auth/github.json
 npx playwright test --project chromium
 ```
 
@@ -93,8 +97,8 @@ The output defaults to `playwright-state.json`. It contains authentication crede
 Export the raw Cookie array as JSON or a Netscape-compatible `cookies.txt` file for curl, wget, and other tools:
 
 ```bash
-cookie-sync cookies github.com --format json --out cookies.json
-cookie-sync cookies github.com --format txt --out cookies.txt
+npx @ivjnus/cookie-sync cookies github.com --format json --out cookies.json
+npx @ivjnus/cookie-sync cookies github.com --format txt --out cookies.txt
 curl --cookie cookies.txt https://github.com/
 ```
 
@@ -106,15 +110,15 @@ Each authorized Chrome profile is an independent browser. Snapshots from differe
 
 ```bash
 # Show browser ID, alias, UA, OS, architecture, and last-seen time
-cookie-sync browsers
+npx @ivjnus/cookie-sync browsers
 
 # Add an alias and operator note
-cookie-sync browser set 8f31a2c0 --alias "Work laptop" --note "Primary Chrome profile"
+npx @ivjnus/cookie-sync browser set 8f31a2c0 --alias "Work laptop" --note "Primary Chrome profile"
 
 # Select a browser by ID prefix or alias
-cookie-sync pull github.com --browser "Work laptop"
-cookie-sync pull-all --browser "Work laptop"
-cookie-sync browse https://github.com/ --browser "Work laptop"
+npx @ivjnus/cookie-sync pull github.com --browser "Work laptop"
+npx @ivjnus/cookie-sync pull-all --browser "Work laptop"
+npx @ivjnus/cookie-sync browse https://github.com/ --browser "Work laptop"
 ```
 
 The extension reports User-Agent Client Hints when available, including browser version, operating system, platform, architecture, bitness, and language. It falls back to `navigator.userAgent` and `navigator.platform` on older Chromium versions. The `browse` command applies the selected source browser's UA and language to its isolated headless context.
@@ -129,10 +133,10 @@ Every retrieval creates a two-minute, browser- and domain-scoped access request.
 Cookie access commands accept an explicit operator reason. The reason appears in Chrome notifications, the browser audit log, and one-time Console import output:
 
 ```bash
-cookie-sync pull github.com --browser "Work laptop" --reason "Refresh deployment credentials"
-cookie-sync pull-all --browser "Work laptop" --reason "Nightly account verification"
-cookie-sync browse https://github.com/ --browser "Work laptop" --reason "Open profile settings for smoke test"
-cookie-sync console github.com --reason "Temporary CI migration"
+npx @ivjnus/cookie-sync pull github.com --browser "Work laptop" --reason "Refresh deployment credentials"
+npx @ivjnus/cookie-sync pull-all --browser "Work laptop" --reason "Nightly account verification"
+npx @ivjnus/cookie-sync browse https://github.com/ --browser "Work laptop" --reason "Open profile settings for smoke test"
+npx @ivjnus/cookie-sync console github.com --reason "Temporary CI migration"
 ```
 
 When `--reason` is omitted, the CLI generates a contextual default such as `Launch headless browser for https://github.com/`. Reasons are plain text, trimmed to 300 characters by the relay, and do not change the request's browser or domain scope.
@@ -142,17 +146,17 @@ The extension popup also includes a per-browser Cookie access audit. It records 
 To wait for a person to press the extension's sync button before continuing an automation job:
 
 ```bash
-cookie-sync wait github.com --timeout 300
+npx @ivjnus/cookie-sync wait github.com --timeout 300
 ```
 
 `wait` uses an authenticated WebSocket for immediate cookie-update notifications and falls back to polling if the socket disconnects. The relay can also send metadata-only Web Push notifications when VAPID keys and a push subscription are configured. Neither notification channel contains Cookie values or encrypted snapshots.
 
 ## One-time Console import
 
-For a browser where the extension cannot be installed, create a five-minute, single-use import session. This command creates its own CLI pairing credentials when none exist, so `cookie-sync pair` is not required first:
+For a browser where the extension cannot be installed, create a five-minute, single-use import session. This command creates its own CLI pairing credentials when none exist, so a separate pair command is not required first:
 
 ```bash
-cookie-sync console github.com
+npx @ivjnus/cookie-sync console github.com
 ```
 
 The command prints one self-contained `javascript:` URL. Open the target site, paste that URL into its DevTools Console or address bar, and keep the CLI running. It verifies the current hostname and encrypts visible cookies locally, then navigates to the relay's same-origin upload page to submit the ciphertext exactly once. No external script or cross-origin request is made from the target site, so strict `script-src` and `connect-src` policies do not block the import. The CLI consumes and deletes the envelope immediately.
@@ -160,17 +164,17 @@ The command prints one self-contained `javascript:` URL. Open the target site, p
 Use the imported snapshot with:
 
 ```bash
-cookie-sync browse https://github.com/ --browser console
+npx @ivjnus/cookie-sync browse https://github.com/ --browser console
 ```
 
-Console JavaScript cannot access `HttpOnly` cookies, Cookie path attributes, or cookies hidden from the current page. Many authentication sessions depend on `HttpOnly`, so this is a limited fallback rather than a replacement for the extension. A strict site Content Security Policy may also block the hosted script.
+Console JavaScript cannot access `HttpOnly` cookies, Cookie path attributes, or cookies hidden from the current page. Many authentication sessions depend on `HttpOnly`, so this is a limited fallback rather than a replacement for the extension. The self-contained URL avoids external script and cross-origin request restrictions, but a site may still disable JavaScript URLs or Console execution through browser or enterprise policy.
 
 The CLI runs on Windows, macOS, and Linux. State is held in the native user-data directory: `$XDG_STATE_HOME/cookie-sync` (Linux), `~/Library/Application Support/cookie-sync` (macOS), or `%APPDATA%\\cookie-sync` (Windows). `browse` discovers Chrome/Chromium on each platform and injects the stored Cookie snapshot into an isolated Playwright context. Set `CHROME_PATH` when Chrome is installed elsewhere. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
 
 Revoke all browsers authorized by the current pairing:
 
 ```bash
-cookie-sync revoke
+npx @ivjnus/cookie-sync revoke
 ```
 
 ## Reuse a pairing on another machine
@@ -178,9 +182,9 @@ cookie-sync revoke
 To run the CLI from a second machine without pairing a new browser, export the current identity and pair credentials and import them there:
 
 ```bash
-cookie-sync export --out cookie-sync-export.json
+npx @ivjnus/cookie-sync export --out cookie-sync-export.json
 # copy the file to the other machine over a secure channel, then:
-cookie-sync import cookie-sync-export.json
+npx @ivjnus/cookie-sync import cookie-sync-export.json
 ```
 
 Omitting `--out` prints the JSON to stdout instead. The exported file contains the CLI's private key and pair read token, so it grants the same Cookie read access as the original machine — handle it like any other credential and delete it once imported.
@@ -189,7 +193,7 @@ Omitting `--out` prints the JSON to stdout instead. The exported file contains t
 
 - Cookies are authentication credentials. Treat the CLI machine as trusted.
 - A high-entropy, 10-minute pair code authorizes a one-time browser upload. The CLI receives a separate read token that is required to retrieve the encrypted snapshot.
-- After the one-time claim, the extension keeps an upload-only token in Chrome local extension storage. The relay stores only its SHA-256 hash. Use `cookie-sync revoke` if the browser or profile is lost.
+- After the one-time claim, the extension keeps an upload-only token in Chrome local extension storage. The relay stores only its SHA-256 hash. Use `npx @ivjnus/cookie-sync revoke` if the browser or profile is lost.
 - The relay persists ciphertext, not plaintext. It does not provide user accounts or audit logs yet. Use TLS and deploy it on a private network or VPN.
 - Relay endpoints are rate limited per client IP. Pair creation and browser claims use stricter limits to reduce enumeration and resource-exhaustion attacks.
 - Never paste a Console import URL from an untrusted source. The URL contains a short-lived upload capability and should navigate only to `https://relay.ivjn.us/console-upload` after encrypting the snapshot locally.
