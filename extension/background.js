@@ -77,7 +77,7 @@ async function showAccessRequest(request) {
   try {
     await chrome.notifications.create(`access:${request.id}`, {
       type: "basic", iconUrl: chrome.runtime.getURL("icon.png"), title: confirm ? "CookieSync 请求读取 Cookie" : "CookieSync 已读取 Cookie",
-      message: `域名：${request.domains.join(", ")}`,
+      message: `域名：${request.domains.join(", ")}\n原因：${request.reason || "未提供"}`,
       priority: 2,
       ...(confirm ? { requireInteraction: true, buttons: [{ title: "允许" }, { title: "拒绝" }] } : {})
     });

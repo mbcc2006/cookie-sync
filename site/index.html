@@ -24,7 +24,7 @@
   <main id="top">
     <section class="hero wrap">
       <div class="hero-copy reveal">
-        <p class="eyebrow"><span></span> Remote session bridge / v0.6</p>
+        <p class="eyebrow"><span></span> Remote session bridge / v0.7</p>
         <h1>让无头浏览器<br><em>保持登录。</em></h1>
         <p class="lead">浏览器只需授权一次，CookieSync 就会将所有允许域名的 Cookie 端到端加密，同步给另一台设备上的 CLI 和无头 Chrome。</p>
         <div class="hero-actions">
@@ -115,6 +115,7 @@
         <article class="feature-card reveal"><span>05 / CONSENT</span><h3>读取通知与确认</h3><p>默认允许 CLI 读取但发送系统通知；也可切换为每次读取都必须在 Chrome 中明确允许。批准请求仅可使用一次。</p><code>notify / confirm</code></article>
         <article class="feature-card reveal delay-1"><span>06 / SCOPE</span><h3>域名级访问范围</h3><p>读取请求绑定浏览器和域名，最长两分钟。拒绝、过期或已消费的请求无法再次获得加密快照。</p><code>403 until approved</code></article>
         <article class="feature-card reveal"><span>07 / AUDIT</span><h3>浏览器端读取审计</h3><p>扩展可查看请求、批准、拒绝、过期和实际消费记录，以及 CLI 主机、系统和来源 IP。审计不包含 Cookie 数据。</p><code>90 days / 500 events</code></article>
+        <article class="feature-card reveal delay-1"><span>08 / REASON</span><h3>每次读取说明用途</h3><p>CLI 可通过 --reason 说明为什么需要 Cookie。原因会显示在 Chrome 通知、审计记录和一次性 Console 导入输出中。</p><code>--reason "Smoke test"</code></article>
       </div>
     </section>
 

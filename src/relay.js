@@ -46,6 +46,10 @@ function clientMetadata(value = {}) {
   return { hostname: text(value.hostname, 100), platform: text(value.platform, 50), release: text(value.release, 100), architecture: text(value.architecture, 50), cliVersion: text(value.cliVersion, 30) };
 }
 
+function accessReason(value, fallback = "CookieSync CLI request") {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 300) : fallback;
+}
+
 function clientIp(request) {
   const cloudflare = request.headers["cf-connecting-ip"];
   const forwarded = request.headers["x-forwarded-for"]?.split(",")[0].trim();
@@ -148,6 +152,7 @@ function consoleImportScript() {
   const decodePem = pem => Uint8Array.from(atob(pem.replace(/-----(BEGIN|END) PUBLIC KEY-----|\\s/g, "")), c => c.charCodeAt(0));
   async function run() {
     if (location.hostname !== config.domain && !location.hostname.endsWith("." + config.domain)) throw new Error("CookieSync domain mismatch");
+    console.info("CookieSync access reason:", config.reason);
     const recipient = await crypto.subtle.importKey("spki", decodePem(config.publicKey), { name: "X25519" }, false, []);
     const ephemeral = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
     const shared = await crypto.subtle.deriveBits({ name: "X25519", public: recipient }, ephemeral.privateKey, 256);
@@ -162,7 +167,7 @@ function consoleImportScript() {
     const envelope = { ephemeralPublicKey: "-----BEGIN PUBLIC KEY-----\\n" + b64(spki) + "\\n-----END PUBLIC KEY-----", iv: b64(iv), ciphertext: b64(encrypted.slice(0,-16)), tag: b64(encrypted.slice(-16)) };
     const response = await fetch(config.relay + "/v1/imports/" + config.id, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + config.uploadToken }, body: JSON.stringify({ envelope }) });
     if (!response.ok) throw new Error((await response.json()).error || "CookieSync upload failed");
-    console.info("CookieSync: uploaded " + cookies.length + " non-HttpOnly cookies for " + config.domain);
+    console.info("CookieSync: uploaded " + cookies.length + " non-HttpOnly cookies for " + config.domain + ". Reason: " + config.reason);
   }
   run().catch(error => console.error("CookieSync:", error));
 })();`;
@@ -325,12 +330,13 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const domains = Array.isArray(input.domains) ? input.domains.map((domain) => domain === "*" ? "*" : isDomain(domain) ? domain.toLowerCase() : null) : [];
       if (!domains.length || domains.includes(null)) return send(response, 400, { error: "At least one valid domain is required." }, origin);
       const now = Date.now();
-      const item = { id: crypto.randomUUID(), code: input.code, deviceId: device.id, domains, status: device.accessPolicy === "confirm" ? "pending" : "approved", mode: device.accessPolicy, client: clientMetadata(input.client), createdAt: now, expiresAt: now + ACCESS_TTL_MS };
+      const reason = accessReason(input.reason);
+      const item = { id: crypto.randomUUID(), code: input.code, deviceId: device.id, domains, reason, status: device.accessPolicy === "confirm" ? "pending" : "approved", mode: device.accessPolicy, client: clientMetadata(input.client), createdAt: now, expiresAt: now + ACCESS_TTL_MS };
       store.accessRequests.set(item.id, item);
-      audit(device.id, item.id, "requested", { domains, mode: item.mode, client: item.client, clientIp: clientIp(request) });
-      if (item.status === "approved") audit(device.id, item.id, "auto-approved", { domains, mode: item.mode });
+      audit(device.id, item.id, "requested", { domains, reason, mode: item.mode, client: item.client, clientIp: clientIp(request) });
+      if (item.status === "approved") audit(device.id, item.id, "auto-approved", { domains, reason, mode: item.mode });
       store.save();
-      notifyDevice(device.id, { type: "access-request", requestId: item.id, domains, mode: item.mode, status: item.status, expiresAt: item.expiresAt });
+      notifyDevice(device.id, { type: "access-request", requestId: item.id, domains, reason, mode: item.mode, status: item.status, expiresAt: item.expiresAt });
       return send(response, 201, item, origin);
     }
 
@@ -363,7 +369,7 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       if (!["approved", "denied"].includes(input.decision)) return send(response, 400, { error: "Decision must be approved or denied." }, origin);
       item.status = input.decision;
       item.decidedAt = Date.now();
-      audit(device.id, item.id, input.decision, { domains: item.domains, mode: item.mode });
+      audit(device.id, item.id, input.decision, { domains: item.domains, reason: item.reason, mode: item.mode });
       store.save();
       notify(item.code, { type: "access-decision", requestId: item.id, status: item.status });
       return send(response, 200, item, origin);
@@ -384,10 +390,10 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       if (!pair || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
       if (!isDomain(input.domain)) return send(response, 400, { error: "A valid domain is required." }, origin);
       const uploadToken = crypto.randomBytes(32).toString("base64url");
-      const item = { id: crypto.randomUUID(), code: input.code, domain: input.domain.toLowerCase(), uploadTokenHash: tokenHash(uploadToken), createdAt: Date.now(), expiresAt: Date.now() + IMPORT_TTL_MS, envelope: null };
+      const item = { id: crypto.randomUUID(), code: input.code, domain: input.domain.toLowerCase(), reason: accessReason(input.reason, "One-time Console Cookie import"), uploadTokenHash: tokenHash(uploadToken), createdAt: Date.now(), expiresAt: Date.now() + IMPORT_TTL_MS, envelope: null };
       store.imports.set(item.id, item);
       store.save();
-      return send(response, 201, { id: item.id, domain: item.domain, uploadToken, publicKey: pair.publicKey, expiresAt: item.expiresAt }, origin);
+      return send(response, 201, { id: item.id, domain: item.domain, reason: item.reason, uploadToken, publicKey: pair.publicKey, expiresAt: item.expiresAt }, origin);
     }
 
     if (request.method === "POST" && url.pathname.startsWith("/v1/imports/")) {
@@ -480,14 +486,14 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       if (!domain) {
         const messages = [...store.messages.values()].filter((item) => item.code === code && (!deviceId || item.deviceId === deviceId));
         access.usedAt = Date.now();
-        audit(deviceId, access.id, "consumed", { domains: access.domains, count: messages.length });
+        audit(deviceId, access.id, "consumed", { domains: access.domains, reason: access.reason, count: messages.length });
         store.save();
         return send(response, 200, { messages }, origin);
       }
       const message = [...store.messages.values()].reverse().find((item) => item.code === code && item.domain === domain && (!deviceId || item.deviceId === deviceId));
       if (!message) return send(response, 404, { error: "No message found." }, origin);
       access.usedAt = Date.now();
-      audit(deviceId, access.id, "consumed", { domains: [domain], count: 1 });
+      audit(deviceId, access.id, "consumed", { domains: [domain], reason: access.reason, count: 1 });
       store.save();
       return send(response, 200, message, origin);
     }

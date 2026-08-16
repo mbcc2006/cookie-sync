@@ -9,7 +9,7 @@ import { chromeLaunchArgs, findChrome } from "./platform.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
-const CLI_VERSION = "0.6.0";
+const CLI_VERSION = "0.7.0";
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
@@ -78,12 +78,12 @@ async function setBrowserProfile(selector, alias, note) {
   console.log(`Updated browser ${device.id.slice(0, 8)}.`);
 }
 
-async function requestBrowserAccess(browser, domains) {
+async function requestBrowserAccess(browser, domains, reason) {
   const { code, readToken } = pairCredentials();
   const access = await request("/v1/access-requests", {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
     body: JSON.stringify({
-      code, deviceId: browser.id, domains,
+      code, deviceId: browser.id, domains, reason,
       client: { hostname: os.hostname(), platform: os.platform(), release: os.release(), architecture: os.arch(), cliVersion: CLI_VERSION }
     })
   });
@@ -154,12 +154,12 @@ async function createPair() {
   console.log("Open the Pair URL in Chrome to prefill and open the CookieSync extension.");
 }
 
-async function pull(domain, browserSelector) {
+async function pull(domain, browserSelector, reason = `Pull Cookie snapshot for ${domain}`) {
   domain = normalizeDomain(domain);
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const browser = await resolveBrowser(browserSelector);
-  const accessRequestId = await requestBrowserAccess(browser, [domain]);
+  const accessRequestId = await requestBrowserAccess(browser, [domain], reason);
   const message = await request(`/v1/messages?code=${encodeURIComponent(code)}&domain=${encodeURIComponent(domain)}&deviceId=${encodeURIComponent(browser.id)}&accessRequestId=${encodeURIComponent(accessRequestId)}`, {
     headers: { authorization: `Bearer ${readToken}` }
   });
@@ -172,11 +172,11 @@ async function pull(domain, browserSelector) {
   console.log(`Saved ${snapshot.cookies.length} cookies for ${domain} from ${browser.alias || browser.id.slice(0, 8)}.`);
 }
 
-async function pullAll(browserSelector) {
+async function pullAll(browserSelector, reason = "Pull all available Cookie snapshots") {
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const browser = await resolveBrowser(browserSelector);
-  const accessRequestId = await requestBrowserAccess(browser, ["*"]);
+  const accessRequestId = await requestBrowserAccess(browser, ["*"], reason);
   const { messages } = await request(`/v1/messages?code=${encodeURIComponent(code)}&deviceId=${encodeURIComponent(browser.id)}&accessRequestId=${encodeURIComponent(accessRequestId)}`, {
     headers: { authorization: `Bearer ${readToken}` }
   });
@@ -201,20 +201,21 @@ async function revoke() {
   console.log("Revoked all browser upload devices for this pairing.");
 }
 
-async function consoleImport(domain) {
+async function consoleImport(domain, reason = `One-time Console Cookie import for ${domain}`) {
   domain = normalizeDomain(domain);
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const session = await request("/v1/imports", {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
-    body: JSON.stringify({ code, domain })
+    body: JSON.stringify({ code, domain, reason })
   });
-  const config = { relay, id: session.id, domain, uploadToken: session.uploadToken, publicKey: session.publicKey };
+  const config = { relay, id: session.id, domain, reason: session.reason, uploadToken: session.uploadToken, publicKey: session.publicKey };
   const scriptUrl = `${relay}/console-import.js#${encodeURIComponent(JSON.stringify(config))}`;
   const snippet = `const s=document.createElement('script');s.src=${JSON.stringify(scriptUrl)};document.documentElement.appendChild(s);`;
   console.log(`Open https://${domain}/, open DevTools Console, then paste this script:\n`);
   console.log(snippet);
-  console.log("\nWaiting for one-time upload (non-HttpOnly cookies only)...");
+  console.log(`\nReason: ${session.reason}`);
+  console.log("Waiting for one-time upload (non-HttpOnly cookies only)...");
   while (Date.now() < session.expiresAt) {
     try {
       const result = await request(`/v1/imports/${encodeURIComponent(session.id)}?code=${encodeURIComponent(code)}`, {
@@ -233,7 +234,7 @@ async function consoleImport(domain) {
   throw new Error("Console import session expired.");
 }
 
-async function waitForSnapshot(domain, timeoutSeconds, browserSelector) {
+async function waitForSnapshot(domain, timeoutSeconds, browserSelector, reason) {
   domain = normalizeDomain(domain);
   const browser = await resolveBrowser(browserSelector);
   const { code, readToken } = pairCredentials();
@@ -258,7 +259,7 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector) {
   } catch {}
   while (Date.now() < deadline) {
     try {
-      await pull(domain, browser.id);
+      await pull(domain, browser.id, reason || `Wait for and pull Cookie snapshot for ${domain}`);
       socket?.close();
       return;
     } catch (error) {
@@ -273,9 +274,16 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector) {
   throw new Error(`Timed out waiting for ${domain}.`);
 }
 
-async function browse(url, browserSelector) {
+async function browse(url, browserSelector, reason) {
   const domain = new URL(url).hostname;
   const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
+  if (browserDevice) {
+    try {
+      await pull(domain, browserDevice.id, reason || `Launch headless browser for ${url}`);
+    } catch (error) {
+      if (!error.message.includes("No message found")) throw error;
+    }
+  }
   const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
   const executablePath = findChrome();
   if (!executablePath || !fs.existsSync(executablePath)) throw new Error("Chrome or Chromium was not found. Set CHROME_PATH to its executable path.");
@@ -314,16 +322,16 @@ const optionValue = (name) => {
 };
 try {
   if (command === "pair") await createPair();
-  else if (command === "console") await consoleImport(value);
+  else if (command === "console") await consoleImport(value, optionValue("--reason"));
   else if (command === "browsers") await listBrowsers();
   else if (command === "browser" && value === "set") await setBrowserProfile(args[2], optionValue("--alias"), optionValue("--note"));
-  else if (command === "pull") await pull(value, optionValue("--browser"));
-  else if (command === "pull-all") await pullAll(optionValue("--browser"));
-  else if (command === "wait") await waitForSnapshot(value, optionValue("--timeout"), optionValue("--browser"));
-  else if (command === "browse") await browse(value, optionValue("--browser"));
+  else if (command === "pull") await pull(value, optionValue("--browser"), optionValue("--reason"));
+  else if (command === "pull-all") await pullAll(optionValue("--browser"), optionValue("--reason"));
+  else if (command === "wait") await waitForSnapshot(value, optionValue("--timeout"), optionValue("--browser"), optionValue("--reason"));
+  else if (command === "browse") await browse(value, optionValue("--browser"), optionValue("--reason"));
   else if (command === "revoke") await revoke();
   else if (command === "status") status();
-  else throw new Error("Usage: cookie-sync <pair|console <domain>|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID]|pull-all [--browser ID]|browse <url> [--browser ID|console]|revoke|status>");
+  else throw new Error("Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|revoke|status>");
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
   process.exitCode = 1;

@@ -79,6 +79,17 @@ Each browser has an independent CLI access policy:
 
 Every retrieval creates a two-minute, browser- and domain-scoped access request. An approved request can be consumed only once. Change the policy from the extension popup at any time.
 
+Cookie access commands accept an explicit operator reason. The reason appears in Chrome notifications, the browser audit log, and one-time Console import output:
+
+```bash
+cookie-sync pull github.com --browser "Work laptop" --reason "Refresh deployment credentials"
+cookie-sync pull-all --browser "Work laptop" --reason "Nightly account verification"
+cookie-sync browse https://github.com/ --browser "Work laptop" --reason "Open profile settings for smoke test"
+cookie-sync console github.com --reason "Temporary CI migration"
+```
+
+When `--reason` is omitted, the CLI generates a contextual default such as `Launch headless browser for https://github.com/`. Reasons are plain text, trimmed to 300 characters by the relay, and do not change the request's browser or domain scope.
+
 The extension popup also includes a per-browser Cookie access audit. It records requested domains, notify/confirm policy, approval, denial, expiration, actual consumption time, CLI hostname/platform/architecture/version, and the source IP observed by the relay. Audit events never contain Cookie names, values, encrypted envelopes, upload tokens, or CLI read tokens. Each browser can view only its own latest 100 events; the relay retains up to 500 events per browser for 90 days.
 
 To wait for a person to press the extension's sync button before continuing an automation job:

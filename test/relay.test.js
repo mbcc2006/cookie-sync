@@ -288,7 +288,7 @@ test("provides an isolated metadata-only access audit to each browser", async (c
   const cliHeaders = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
   const access = await json(url, "/v1/access-requests", {
     method: "POST", headers: { ...cliHeaders, "cf-connecting-ip": "203.0.113.21" },
-    body: JSON.stringify({ code: pair.value.code, deviceId: first.value.deviceId, domains: ["relay.ivjn.us"], client: { hostname: "automation-01", platform: "linux", architecture: "x64", cliVersion: "0.5.0" } })
+    body: JSON.stringify({ code: pair.value.code, deviceId: first.value.deviceId, domains: ["relay.ivjn.us"], reason: "Verify production login before deployment", client: { hostname: "automation-01", platform: "linux", architecture: "x64", cliVersion: "0.6.0" } })
   });
   const firstHeaders = { authorization: `Bearer ${first.value.uploadToken}` };
   const firstAudit = await json(url, `/v1/device/audit?deviceId=${first.value.deviceId}`, { headers: firstHeaders });
@@ -296,6 +296,7 @@ test("provides an isolated metadata-only access audit to each browser", async (c
   assert.deepEqual(firstAudit.value.events.map((event) => event.action), ["auto-approved", "requested"]);
   assert.equal(firstAudit.value.events[1].client.hostname, "automation-01");
   assert.equal(firstAudit.value.events[1].clientIp, "203.0.113.21");
+  assert.equal(firstAudit.value.events[1].reason, "Verify production login before deployment");
   assert.equal(JSON.stringify(firstAudit.value).includes(pair.value.readToken), false);
   assert.equal(JSON.stringify(firstAudit.value).includes("envelope"), false);
   const secondAudit = await json(url, `/v1/device/audit?deviceId=${second.value.deviceId}`, { headers: { authorization: `Bearer ${second.value.uploadToken}` } });
@@ -303,4 +304,28 @@ test("provides an isolated metadata-only access audit to each browser", async (c
   const blocked = await json(url, `/v1/device/audit?deviceId=${first.value.deviceId}`, { headers: { authorization: `Bearer ${second.value.uploadToken}` } });
   assert.equal(blocked.response.status, 401);
   assert.equal(access.value.deviceId, first.value.deviceId);
+});
+
+test("bounds access reasons and returns Console import reasons", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const headers = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const reason = "x".repeat(500);
+  const access = await json(url, "/v1/access-requests", {
+    method: "POST", headers, body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, domains: ["relay.ivjn.us"], reason })
+  });
+  assert.equal(access.value.reason.length, 300);
+  const session = await json(url, "/v1/imports", {
+    method: "POST", headers, body: JSON.stringify({ code: pair.value.code, domain: "relay.ivjn.us", reason: "Temporary migration" })
+  });
+  assert.equal(session.value.reason, "Temporary migration");
 });

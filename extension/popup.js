@@ -67,7 +67,8 @@ async function loadAudit() {
     const host = event.client?.hostname ? ` · ${event.client.hostname}` : "";
     const source = event.clientIp ? ` · ${event.clientIp}` : "";
     const domains = (event.domains || []).join(", ") || "-";
-    return `<article class="event ${escapeHtml(event.action)}"><b>${escapeHtml(eventLabel(event.action))}</b><small>${escapeHtml(domains + host + source)}</small><time>${escapeHtml(new Date(event.createdAt).toLocaleString())}</time></article>`;
+    const reason = event.reason || "未提供原因";
+    return `<article class="event ${escapeHtml(event.action)}"><b>${escapeHtml(eventLabel(event.action))}</b><small>域名：${escapeHtml(domains)}</small><small>原因：${escapeHtml(reason)}</small><small>${escapeHtml((host + source).replace(/^ · /, ""))}</small><time>${escapeHtml(new Date(event.createdAt).toLocaleString())}</time></article>`;
   }).join("") : "<p>暂无访问记录。</p>";
 }
 
