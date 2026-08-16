@@ -180,3 +180,28 @@ test("isolates same-domain snapshots by browser and emits websocket updates", as
   assert.equal(listed.value.messages.length, 2);
   assert.deepEqual(new Set(listed.value.messages.map((message) => message.deviceId)), new Set([first.value.deviceId, second.value.deviceId]));
 });
+
+test("accepts and consumes an encrypted console import exactly once", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const readHeaders = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const session = await json(url, "/v1/imports", {
+    method: "POST", headers: readHeaders, body: JSON.stringify({ code: pair.value.code, domain: "relay.ivjn.us" })
+  });
+  assert.equal(session.response.status, 201);
+  const envelope = encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [{ name: "visible", value: "yes" }] });
+  const uploadOptions = {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.value.uploadToken}` }, body: JSON.stringify({ envelope })
+  };
+  assert.equal((await json(url, `/v1/imports/${session.value.id}`, uploadOptions)).response.status, 201);
+  assert.equal((await json(url, `/v1/imports/${session.value.id}`, uploadOptions)).response.status, 409);
+  const importPath = `/v1/imports/${session.value.id}?code=${pair.value.code}`;
+  assert.equal((await json(url, importPath, { headers: readHeaders })).response.status, 200);
+  assert.equal((await json(url, importPath, { headers: readHeaders })).response.status, 401);
+});

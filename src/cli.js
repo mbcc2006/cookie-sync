@@ -153,6 +153,38 @@ async function revoke() {
   console.log("Revoked all browser upload devices for this pairing.");
 }
 
+async function consoleImport(domain) {
+  domain = normalizeDomain(domain);
+  const identity = credentials();
+  const { code, readToken } = pairCredentials();
+  const session = await request("/v1/imports", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
+    body: JSON.stringify({ code, domain })
+  });
+  const config = { relay, id: session.id, domain, uploadToken: session.uploadToken, publicKey: session.publicKey };
+  const scriptUrl = `${relay}/console-import.js#${encodeURIComponent(JSON.stringify(config))}`;
+  const snippet = `const s=document.createElement('script');s.src=${JSON.stringify(scriptUrl)};document.documentElement.appendChild(s);`;
+  console.log(`Open https://${domain}/, open DevTools Console, then paste this script:\n`);
+  console.log(snippet);
+  console.log("\nWaiting for one-time upload (non-HttpOnly cookies only)...");
+  while (Date.now() < session.expiresAt) {
+    try {
+      const result = await request(`/v1/imports/${encodeURIComponent(session.id)}?code=${encodeURIComponent(code)}`, {
+        headers: { authorization: `Bearer ${readToken}` }
+      });
+      const snapshot = decryptFrom(identity.privateKey, result.envelope);
+      if (snapshot.domain !== domain || !Array.isArray(snapshot.cookies)) throw new Error("Invalid console cookie snapshot.");
+      writePrivateJson(`cookies-console-${domain}.json`, snapshot);
+      console.log(`Saved ${snapshot.cookies.length} non-HttpOnly cookies for ${domain}.`);
+      return;
+    } catch (error) {
+      if (!error.message.includes("has not been uploaded")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+  throw new Error("Console import session expired.");
+}
+
 async function waitForSnapshot(domain, timeoutSeconds, browserSelector) {
   domain = normalizeDomain(domain);
   const browser = await resolveBrowser(browserSelector);
@@ -195,15 +227,15 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector) {
 
 async function browse(url, browserSelector) {
   const domain = new URL(url).hostname;
-  const browserDevice = await resolveBrowser(browserSelector);
-  const snapshot = readJson(`cookies-${browserDevice.id}-${domain}.json`);
+  const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
+  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
   const executablePath = findChrome();
   if (!executablePath || !fs.existsSync(executablePath)) throw new Error("Chrome or Chromium was not found. Set CHROME_PATH to its executable path.");
   const browser = await chromium.launch({ executablePath, headless: true, args: chromeLaunchArgs() });
   try {
     const context = await browser.newContext({
-      ...(browserDevice.metadata?.userAgent ? { userAgent: browserDevice.metadata.userAgent } : {}),
-      ...(browserDevice.metadata?.language ? { locale: browserDevice.metadata.language } : {})
+      ...(browserDevice?.metadata?.userAgent ? { userAgent: browserDevice.metadata.userAgent } : {}),
+      ...(browserDevice?.metadata?.language ? { locale: browserDevice.metadata.language } : {})
     });
     await context.addCookies(snapshot.cookies.map(toPlaywrightCookie));
     const page = await context.newPage();
@@ -234,6 +266,7 @@ const optionValue = (name) => {
 };
 try {
   if (command === "pair") await createPair();
+  else if (command === "console") await consoleImport(value);
   else if (command === "browsers") await listBrowsers();
   else if (command === "browser" && value === "set") await setBrowserProfile(args[2], optionValue("--alias"), optionValue("--note"));
   else if (command === "pull") await pull(value, optionValue("--browser"));
@@ -242,7 +275,7 @@ try {
   else if (command === "browse") await browse(value, optionValue("--browser"));
   else if (command === "revoke") await revoke();
   else if (command === "status") status();
-  else throw new Error("Usage: cookie-sync <pair|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID]|pull-all [--browser ID]|browse <url> [--browser ID]|revoke|status>");
+  else throw new Error("Usage: cookie-sync <pair|console <domain>|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID]|pull-all [--browser ID]|browse <url> [--browser ID|console]|revoke|status>");
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
   process.exitCode = 1;

@@ -107,10 +107,15 @@
         <h2>现在开始同步</h2>
       </div>
       <div class="commands reveal delay-1">
-        <div class="tabs" role="tablist"><button class="active" data-tab="install">安装</button><button data-tab="pair">配对</button><button data-tab="use">使用</button><button data-tab="revoke">撤销</button></div>
+        <div class="tabs" role="tablist"><button class="active" data-tab="install">安装</button><button data-tab="pair">配对</button><button data-tab="use">使用</button><button data-tab="console">Console</button><button data-tab="revoke">撤销</button></div>
         <div class="command-panel" id="install"><pre><span># Node.js 20+</span>
         <div class="command-panel hidden" id="pair"><pre><span># 生成一次性验证码</span>
         <div class="command-panel hidden" id="use"><pre><span># 拉取全部已同步域名</span>
+        <div class="command-panel hidden" id="console"><pre><span># 创建 5 分钟一次性导入并打印 Console 脚本</span>
+cookie-sync console github.com
+
+<span># 仅支持页面可见的非 HttpOnly Cookie</span>
+cookie-sync browse https://github.com/ --browser console</pre><button class="mini-copy" data-copy="cookie-sync console github.com">复制</button></div>
         <div class="command-panel hidden" id="revoke"><pre><span># 撤销当前配对下的所有浏览器</span>
       </div>
     </section>

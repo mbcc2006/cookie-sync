@@ -69,6 +69,24 @@ cookie-sync wait github.com --timeout 300
 
 `wait` uses an authenticated WebSocket for immediate cookie-update notifications and falls back to polling if the socket disconnects. The relay can also send metadata-only Web Push notifications when VAPID keys and a push subscription are configured. Neither notification channel contains Cookie values or encrypted snapshots.
 
+## One-time Console import
+
+For a browser where the extension cannot be installed, create a five-minute, single-use import session:
+
+```bash
+cookie-sync console github.com
+```
+
+Open the target site, paste the printed snippet into its DevTools Console, and keep the CLI running. The snippet loads `https://relay.ivjn.us/console-import.js`, verifies the current hostname, encrypts the visible cookies in the page, and uploads them exactly once. The CLI consumes and deletes the envelope immediately.
+
+Use the imported snapshot with:
+
+```bash
+cookie-sync browse https://github.com/ --browser console
+```
+
+Console JavaScript cannot access `HttpOnly` cookies, Cookie path attributes, or cookies hidden from the current page. Many authentication sessions depend on `HttpOnly`, so this is a limited fallback rather than a replacement for the extension. A strict site Content Security Policy may also block the hosted script.
+
 The CLI runs on Windows, macOS, and Linux with Node.js 20 or newer. Install it with `npm install -g .`, then use `cookie-sync`. State is held in the native user-data directory: `$XDG_STATE_HOME/cookie-sync` (Linux), `~/Library/Application Support/cookie-sync` (macOS), or `%APPDATA%\\cookie-sync` (Windows). `browse` discovers Chrome/Chromium on each platform and injects the stored Cookie snapshot into an isolated Playwright context. Set `CHROME_PATH` when Chrome is installed elsewhere. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
 
 Revoke all browsers authorized by the current pairing:
@@ -84,5 +102,6 @@ cookie-sync revoke
 - After the one-time claim, the extension keeps an upload-only token in Chrome local extension storage. The relay stores only its SHA-256 hash. Use `cookie-sync revoke` if the browser or profile is lost.
 - The relay persists ciphertext, not plaintext. It does not provide user accounts or audit logs yet. Use TLS and deploy it on a private network or VPN.
 - Relay endpoints are rate limited per client IP. Pair creation and browser claims use stricter limits to reduce enumeration and resource-exhaustion attacks.
+- Never paste a Console import snippet from an untrusted source. It contains a short-lived upload capability and should only reference `https://relay.ivjn.us/console-import.js`.
 - Only cookies are synchronized. Local storage, IndexedDB, WebAuthn, and device-bound logins are not transferred.
 - The Chrome extension must be served from an HTTPS relay in real deployments because extension requests can otherwise expose traffic on hostile networks.

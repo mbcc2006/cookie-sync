@@ -8,10 +8,12 @@ import { WebSocketServer } from "ws";
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const PAIR_TTL_MS = 10 * 60 * 1000;
 const MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const IMPORT_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_RATE_LIMITS = {
   api: { max: 120, windowMs: 60_000 },
   pairs: { max: 10, windowMs: 60_000 },
   claims: { max: 20, windowMs: 60_000 }
+  , imports: { max: 10, windowMs: 60_000 }
 };
 
 function isDomain(value) {
@@ -63,22 +65,24 @@ function createStore(directory) {
   let pairs = new Map();
   let devices = new Map();
   let messages = new Map();
+  let imports = new Map();
   let pushSubscriptions = [];
   try {
     const values = JSON.parse(fs.readFileSync(file, "utf8"));
     pairs = new Map((values.pairs || []).map((pair) => [pair.code, pair]));
     devices = new Map((values.devices || []).map((device) => [device.id, device]));
     messages = new Map((values.messages || []).map((message) => [message.id, message]));
+    imports = new Map((values.imports || []).map((item) => [item.id, item]));
     pushSubscriptions = values.pushSubscriptions || [];
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   function save() {
     const temporary = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()], pushSubscriptions })}\n`, { mode: 0o600 });
+    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()], imports: [...imports.values()], pushSubscriptions })}\n`, { mode: 0o600 });
     fs.renameSync(temporary, file);
   }
-  return { pairs, devices, messages, pushSubscriptions, save };
+  return { pairs, devices, messages, imports, pushSubscriptions, save };
 }
 
 function cleanup(pairs, store) {
@@ -90,8 +94,14 @@ function cleanup(pairs, store) {
       changed = true;
     }
   }
+  for (const [id, item] of store.imports) {
+    if (item.expiresAt <= now) {
+      store.imports.delete(id);
+      changed = true;
+    }
+  }
   for (const [code, pair] of pairs) {
-    if (pair.expiresAt <= now && ![...store.devices.values()].some((device) => device.code === code) && ![...store.messages.values()].some((message) => message.code === code)) {
+    if (pair.expiresAt <= now && ![...store.devices.values()].some((device) => device.code === code) && ![...store.messages.values()].some((message) => message.code === code) && ![...store.imports.values()].some((item) => item.code === code)) {
       pairs.delete(code);
       changed = true;
     }
@@ -104,6 +114,34 @@ function send(response, status, value, origin, extraHeaders = {}) {
   if (origin) headers["access-control-allow-origin"] = origin;
   response.writeHead(status, { ...headers, ...extraHeaders });
   response.end(JSON.stringify(value));
+}
+
+function consoleImportScript() {
+  return `(() => {
+  const script = document.currentScript;
+  const config = JSON.parse(decodeURIComponent(script.src.split("#")[1] || ""));
+  const b64 = bytes => btoa(String.fromCharCode(...bytes));
+  const decodePem = pem => Uint8Array.from(atob(pem.replace(/-----(BEGIN|END) PUBLIC KEY-----|\\s/g, "")), c => c.charCodeAt(0));
+  async function run() {
+    if (location.hostname !== config.domain && !location.hostname.endsWith("." + config.domain)) throw new Error("CookieSync domain mismatch");
+    const recipient = await crypto.subtle.importKey("spki", decodePem(config.publicKey), { name: "X25519" }, false, []);
+    const ephemeral = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
+    const shared = await crypto.subtle.deriveBits({ name: "X25519", public: recipient }, ephemeral.privateKey, 256);
+    const material = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(), info: new TextEncoder().encode("cookie-sync-v1") }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+    const cookies = document.cookie ? document.cookie.split(/;\\s*/).map(part => { const i = part.indexOf("="); return { name: decodeURIComponent(part.slice(0, i)), value: decodeURIComponent(part.slice(i + 1)), domain: location.hostname, path: "/", secure: location.protocol === "https:", httpOnly: false, sameSite: "unspecified" }; }) : [];
+    const snapshot = { domain: config.domain, cookies, source: "console", userAgent: navigator.userAgent, syncedAt: new Date().toISOString() };
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(snapshot))));
+    const raw = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
+    const prefix = Uint8Array.from([48,42,48,5,6,3,43,110,110,3,33,0]); const spki = new Uint8Array(44); spki.set(prefix); spki.set(raw, 12);
+    const envelope = { ephemeralPublicKey: "-----BEGIN PUBLIC KEY-----\\n" + b64(spki) + "\\n-----END PUBLIC KEY-----", iv: b64(iv), ciphertext: b64(encrypted.slice(0,-16)), tag: b64(encrypted.slice(-16)) };
+    const response = await fetch(config.relay + "/v1/imports/" + config.id, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + config.uploadToken }, body: JSON.stringify({ envelope }) });
+    if (!response.ok) throw new Error((await response.json()).error || "CookieSync upload failed");
+    console.info("CookieSync: uploaded " + cookies.length + " non-HttpOnly cookies for " + config.domain);
+  }
+  run().catch(error => console.error("CookieSync:", error));
+})();`;
 }
 
 async function body(request) {
@@ -157,10 +195,15 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
     }
 
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (request.method === "GET" && url.pathname === "/console-import.js") {
+      response.writeHead(200, { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" });
+      return response.end(consoleImportScript());
+    }
     if (url.pathname !== "/healthz") {
       const ip = clientIp(request);
       const bucket = request.method === "POST" && url.pathname === "/v1/pairs" ? "pairs"
-        : request.method === "POST" && url.pathname === "/v1/devices" ? "claims" : "api";
+        : request.method === "POST" && url.pathname === "/v1/devices" ? "claims"
+          : request.method === "POST" && (url.pathname === "/v1/imports" || url.pathname.startsWith("/v1/imports/")) ? "imports" : "api";
       const retryAfter = rateLimit(`${bucket}:${ip}`, rateLimits[bucket]);
       if (retryAfter) return send(response, 429, { error: "Too many requests. Try again later." }, origin, { "retry-after": String(retryAfter) });
     }
@@ -205,6 +248,46 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       store.devices.set(device.id, device);
       store.save();
       return send(response, 201, { deviceId: device.id, uploadToken, publicKey: pair.publicKey }, origin);
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/imports") {
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const pair = pairs.get(input.code);
+      if (!pair || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      if (!isDomain(input.domain)) return send(response, 400, { error: "A valid domain is required." }, origin);
+      const uploadToken = crypto.randomBytes(32).toString("base64url");
+      const item = { id: crypto.randomUUID(), code: input.code, domain: input.domain.toLowerCase(), uploadTokenHash: tokenHash(uploadToken), createdAt: Date.now(), expiresAt: Date.now() + IMPORT_TTL_MS, envelope: null };
+      store.imports.set(item.id, item);
+      store.save();
+      return send(response, 201, { id: item.id, domain: item.domain, uploadToken, publicKey: pair.publicKey, expiresAt: item.expiresAt }, origin);
+    }
+
+    if (request.method === "POST" && url.pathname.startsWith("/v1/imports/")) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/imports/".length));
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const item = store.imports.get(id);
+      if (!item || item.expiresAt <= Date.now()) return send(response, 404, { error: "Import session is invalid or expired." }, origin);
+      if (item.envelope) return send(response, 409, { error: "Import session has already been used." }, origin);
+      if (!token || !safeEqual(tokenHash(token), item.uploadTokenHash)) return send(response, 401, { error: "A valid one-time upload token is required." }, origin);
+      if (!input.envelope) return send(response, 400, { error: "An encrypted envelope is required." }, origin);
+      item.envelope = input.envelope;
+      delete item.uploadTokenHash;
+      store.save();
+      notify(item.code, { type: "console-import", importId: item.id, domain: item.domain, createdAt: Date.now() });
+      return send(response, 201, { ok: true }, origin);
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/v1/imports/")) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/imports/".length));
+      const code = url.searchParams.get("code");
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const pair = pairs.get(code);
+      const item = store.imports.get(id);
+      if (!pair || !item || item.code !== code || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      if (!item.envelope) return send(response, 404, { error: "Console import has not been uploaded yet." }, origin);
+      store.imports.delete(id);
+      store.save();
+      return send(response, 200, { id: item.id, domain: item.domain, envelope: item.envelope }, origin);
     }
 
     if (request.method === "GET" && url.pathname === "/v1/devices") {
@@ -291,6 +374,7 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       if (!pair || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
       for (const [id, device] of store.devices) if (device.code === code) store.devices.delete(id);
       for (const [id, message] of store.messages) if (message.code === code) store.messages.delete(id);
+      for (const [id, item] of store.imports) if (item.code === code) store.imports.delete(id);
       const subscriptions = store.pushSubscriptions.filter((subscription) => subscription.code !== code);
       store.pushSubscriptions.splice(0, store.pushSubscriptions.length, ...subscriptions);
       pairs.delete(code);
