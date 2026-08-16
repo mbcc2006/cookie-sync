@@ -3,6 +3,9 @@
   "name": "CookieSync",
   "version": "0.6.0",
   "description": "Continuously encrypt and sync permitted browser cookies to a paired CookieSync CLI.",
+  "icons": {
+    "128": "icon.png"
+  },
   "permissions": ["cookies", "storage", "alarms", "notifications"],
   "background": {
     "service_worker": "background.js"
@@ -14,6 +17,7 @@
   }],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "action": {
+    "default_icon": "icon.png",
     "default_popup": "popup.html"
   }
 }

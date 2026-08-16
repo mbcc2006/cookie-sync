@@ -74,12 +74,16 @@ async function showAccessRequest(request) {
   if ((await chrome.storage.local.get(key))[key]) return;
   await chrome.storage.local.set({ [key]: true });
   const confirm = request.mode === "confirm" && request.status === "pending";
-  await chrome.notifications.create(`access:${request.id}`, {
-    type: "basic", iconUrl: "icon.svg", title: confirm ? "CookieSync 请求读取 Cookie" : "CookieSync 已读取 Cookie",
-    message: `域名：${request.domains.join(", ")}`,
-    priority: 2,
-    ...(confirm ? { requireInteraction: true, buttons: [{ title: "允许" }, { title: "拒绝" }] } : {})
-  });
+  try {
+    await chrome.notifications.create(`access:${request.id}`, {
+      type: "basic", iconUrl: chrome.runtime.getURL("icon.png"), title: confirm ? "CookieSync 请求读取 Cookie" : "CookieSync 已读取 Cookie",
+      message: `域名：${request.domains.join(", ")}`,
+      priority: 2,
+      ...(confirm ? { requireInteraction: true, buttons: [{ title: "允许" }, { title: "拒绝" }] } : {})
+    });
+  } catch (error) {
+    console.warn("CookieSync notification unavailable:", error.message);
+  }
 }
 
 async function pollAccessRequests() {
