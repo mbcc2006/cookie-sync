@@ -16,8 +16,9 @@ const AUDIT_MAX_PER_DEVICE = 500;
 const DEFAULT_RATE_LIMITS = {
   api: { max: 120, windowMs: 60_000 },
   pairs: { max: 10, windowMs: 60_000 },
-  claims: { max: 20, windowMs: 60_000 }
-  , imports: { max: 10, windowMs: 60_000 }
+  claims: { max: 20, windowMs: 60_000 },
+  imports: { max: 10, windowMs: 60_000 },
+  uploads: { max: 600, windowMs: 60_000 }
 };
 
 function isDomain(value) {
@@ -264,8 +265,11 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const ip = clientIp(request);
       const bucket = request.method === "POST" && url.pathname === "/v1/pairs" ? "pairs"
         : request.method === "POST" && url.pathname === "/v1/devices" ? "claims"
-          : request.method === "POST" && (url.pathname === "/v1/imports" || url.pathname.startsWith("/v1/imports/")) ? "imports" : "api";
-      const retryAfter = rateLimit(`${bucket}:${ip}`, rateLimits[bucket]);
+          : request.method === "POST" && (url.pathname === "/v1/imports" || url.pathname.startsWith("/v1/imports/")) ? "imports"
+            : request.method === "POST" && (url.pathname === "/v1/messages" || url.pathname === "/v1/messages/batch") ? "uploads" : "api";
+      const uploadToken = bucket === "uploads" ? request.headers.authorization?.replace(/^Bearer\s+/i, "") : "";
+      const limiterKey = uploadToken ? `${bucket}:${ip}:${tokenHash(uploadToken)}` : `${bucket}:${ip}`;
+      const retryAfter = rateLimit(limiterKey, rateLimits[bucket] || rateLimits.api);
       if (retryAfter) return send(response, 429, { error: "Too many requests. Try again later." }, origin, { "retry-after": String(retryAfter) });
     }
     cleanup(pairs, store);
@@ -500,9 +504,12 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       return send(response, outcome.status, outcome.value, origin);
     }
 
-    if (request.method === "POST" && url.pathname === "/v1/messages") {
-      if (typeof input.deviceId !== "string" || !isDomain(input.domain) || !input.envelope) {
-        return send(response, 400, { error: "A device ID, valid domain, and envelope are required." }, origin);
+    if (request.method === "POST" && (url.pathname === "/v1/messages" || url.pathname === "/v1/messages/batch")) {
+      const batch = url.pathname.endsWith("/batch");
+      const snapshots = batch ? input.messages : [{ domain: input.domain, envelope: input.envelope }];
+      if (typeof input.deviceId !== "string" || !Array.isArray(snapshots) || !snapshots.length || snapshots.length > 100
+        || snapshots.some((snapshot) => !isDomain(snapshot?.domain) || !snapshot.envelope)) {
+        return send(response, 400, { error: batch ? "A device ID and 1-100 valid message snapshots are required." : "A device ID, valid domain, and envelope are required." }, origin);
       }
       const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
       const device = store.devices.get(input.deviceId);
@@ -510,17 +517,20 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       device.lastSeenAt = Date.now();
       if (input.metadata) device.metadata = browserMetadata(input.metadata);
       const now = Date.now();
-      const message = {
-        id: crypto.randomUUID(), code: device.code, deviceId: device.id, domain: input.domain.toLowerCase(), envelope: input.envelope,
+      const messages = snapshots.map((snapshot) => ({
+        id: crypto.randomUUID(), code: device.code, deviceId: device.id, domain: snapshot.domain.toLowerCase(), envelope: snapshot.envelope,
         createdAt: now, expiresAt: now + MESSAGE_TTL_MS
-      };
+      }));
+      const domains = new Set(messages.map((message) => message.domain));
       for (const [id, existing] of store.messages) {
-        if (existing.code === device.code && existing.deviceId === device.id && existing.domain === message.domain) store.messages.delete(id);
+        if (existing.code === device.code && existing.deviceId === device.id && domains.has(existing.domain)) store.messages.delete(id);
       }
-      store.messages.set(message.id, message);
+      for (const message of messages) store.messages.set(message.id, message);
       store.save();
-      notify(device.code, { type: "cookie-update", browserId: device.id, domain: message.domain, createdAt: message.createdAt });
-      return send(response, 201, { id: message.id, expiresAt: message.expiresAt }, origin);
+      for (const message of messages) notify(device.code, { type: "cookie-update", browserId: device.id, domain: message.domain, createdAt: message.createdAt });
+      return send(response, 201, batch
+        ? { messages: messages.map(({ id, domain, expiresAt }) => ({ id, domain, expiresAt })) }
+        : { id: messages[0].id, expiresAt: messages[0].expiresAt }, origin);
     }
 
     if (request.method === "GET" && url.pathname === "/v1/messages") {

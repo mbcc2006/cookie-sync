@@ -223,6 +223,71 @@ test("rate limits pair creation by client IP", async (context) => {
   assert.ok(Number(limited.headers.get("retry-after")) > 0);
 });
 
+test("rate limits uploads per device token instead of sharing an IP bucket", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-upload-limit-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const limits = {
+    api: { max: 100, windowMs: 60_000 }, pairs: { max: 100, windowMs: 60_000 },
+    claims: { max: 100, windowMs: 60_000 }, uploads: { max: 1, windowMs: 60_000 }
+  };
+  const { relay, url } = await startRelay(directory, { rateLimits: limits });
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const claim = () => json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const first = await claim();
+  const second = await claim();
+  const upload = (device, domain) => fetch(`${url}/v1/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}`, "cf-connecting-ip": "203.0.113.9" },
+    body: JSON.stringify({ deviceId: device.value.deviceId, domain, envelope: encryptFor(identity.publicKey, { domain, cookies: [] }) })
+  });
+
+  assert.equal((await upload(first, "first.example.com")).status, 201);
+  assert.equal((await upload(first, "again.example.com")).status, 429);
+  assert.equal((await upload(second, "second.example.com")).status, 201);
+});
+
+test("stores a validated batch of encrypted snapshots in one request", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-batch-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const headers = { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` };
+  const messages = ["first.example.com", "second.example.com"].map((domain) => ({
+    domain, envelope: encryptFor(identity.publicKey, { domain, cookies: [{ name: domain, value: "1" }] })
+  }));
+  const uploaded = await json(url, "/v1/messages/batch", {
+    method: "POST", headers, body: JSON.stringify({ deviceId: device.value.deviceId, messages })
+  });
+  assert.equal(uploaded.response.status, 201);
+  assert.deepEqual(uploaded.value.messages.map((message) => message.domain), messages.map((message) => message.domain));
+
+  const invalid = await json(url, "/v1/messages/batch", {
+    method: "POST", headers, body: JSON.stringify({ deviceId: device.value.deviceId, messages: [...messages, { domain: "invalid", envelope: {} }] })
+  });
+  assert.equal(invalid.response.status, 400);
+
+  const readHeaders = { authorization: `Bearer ${pair.value.readToken}` };
+  const access = await json(url, "/v1/access-requests", {
+    method: "POST", headers: { "content-type": "application/json", ...readHeaders },
+    body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, domains: ["*"] })
+  });
+  const listed = await json(url, `/v1/messages?code=${pair.value.code}&deviceId=${device.value.deviceId}&accessRequestId=${access.value.id}`, { headers: readHeaders });
+  assert.deepEqual(listed.value.messages.map((message) => message.domain).sort(), ["first.example.com", "second.example.com"]);
+});
+
 test("isolates same-domain snapshots by browser and emits websocket updates", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));

@@ -52,14 +52,25 @@ async function encrypt(publicKeyPem, snapshot) {
   return { ephemeralPublicKey: `-----BEGIN PUBLIC KEY-----\n${base64(spki)}\n-----END PUBLIC KEY-----`, iv: base64(iv), ciphertext: base64(encrypted.slice(0, -16)), tag: base64(encrypted.slice(-16)) };
 }
 
+async function uploadWithRetry(url, options) {
+  let response = await fetch(url, options);
+  if (response.status === 429) {
+    const retryAfter = Math.min(60, Math.max(1, Number(response.headers.get("retry-after")) || 1));
+    await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+    response = await fetch(url, options);
+  }
+  if (!response.ok) throw new Error((await response.json()).error || await t("error.uploadFailed"));
+  return response;
+}
+
 async function syncDomain(domain) {
   const { relay, deviceId, uploadToken, publicKey } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken", "publicKey"]);
   if (!relay || !deviceId || !uploadToken || !publicKey) return;
   const cookies = await chrome.cookies.getAll({ domain });
   const envelope = await encrypt(publicKey, { domain, cookies, syncedAt: new Date().toISOString() });
   const metadata = await browserMetadata();
-  const response = await fetch(`${relay}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, domain, envelope, metadata }) });
-  if (!response.ok) throw new Error((await response.json()).error || await t("error.uploadFailed"));
+  const options = { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, domain, envelope, metadata }) };
+  await uploadWithRetry(`${relay}/v1/messages`, options);
 }
 
 function schedule(domain) {
@@ -68,9 +79,19 @@ function schedule(domain) {
 }
 
 async function syncAll() {
+  const { relay, deviceId, uploadToken, publicKey } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken", "publicKey"]);
+  if (!relay || !deviceId || !uploadToken || !publicKey) return;
   const cookies = await chrome.cookies.getAll({});
-  const domains = new Set(cookies.map((cookie) => cookie.domain.replace(/^\./, "")));
-  await Promise.all([...domains].map((domain) => syncDomain(domain)));
+  const domains = [...new Set(cookies.map((cookie) => cookie.domain.replace(/^\./, "")))];
+  const metadata = await browserMetadata();
+  for (let index = 0; index < domains.length; index += 20) {
+    const messages = await Promise.all(domains.slice(index, index + 20).map(async (domain) => {
+      const domainCookies = await chrome.cookies.getAll({ domain });
+      return { domain, envelope: await encrypt(publicKey, { domain, cookies: domainCookies, syncedAt: new Date().toISOString() }) };
+    }));
+    const options = { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, messages, metadata }) };
+    await uploadWithRetry(`${relay}/v1/messages/batch`, options);
+  }
 }
 
 async function decide(requestId, decision) {
@@ -138,14 +159,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "revoked") { deviceSocket?.close(); deviceSocket = undefined; sendResponse({ ok: true }); }
   return true;
 });
-chrome.runtime.onStartup.addListener(syncAll);
+chrome.runtime.onStartup.addListener(() => syncAll().catch(() => {}));
 chrome.runtime.onStartup.addListener(() => { connectDeviceSocket(); pollAccessRequests(); });
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("cookie-sync", { periodInMinutes: 15 });
   chrome.alarms.create("cookie-access", { periodInMinutes: 1 });
 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "cookie-sync") syncAll();
+  if (alarm.name === "cookie-sync") syncAll().catch(() => {});
   if (alarm.name === "cookie-access") { pollAccessRequests(); connectDeviceSocket(); }
 });
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
