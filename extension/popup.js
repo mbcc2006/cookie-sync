@@ -84,6 +84,8 @@ async function sync() {
 }
 
 chrome.storage.local.get(["relay", "code", "domain"]).then((saved) => {
-  for (const [key, value] of Object.entries(saved)) $(key).value = value || "";
+  $("relay").value = saved.relay || "https://relay.ivjn.us";
+  $("code").value = saved.code || "";
+  $("domain").value = saved.domain || "";
 });
 $("sync").addEventListener("click", () => sync().catch((error) => status(`Error: ${error.message}`)));
