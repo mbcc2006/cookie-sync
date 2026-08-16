@@ -1,15 +1,41 @@
 {
   "name": "cookie-sync",
   "version": "0.7.0",
-  "private": true,
+  "description": "Securely sync browser cookies to CLI and Playwright",
+  "license": "MIT",
+  "author": "mbcc2006",
   "type": "module",
+  "files": [
+    "src/"
+  ],
   "bin": {
     "cookie-sync": "src/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
     "start": "node src/relay.js",
     "cli": "node src/cli.js",
-    "test": "node --test"
+    "test": "node --test",
+    "prepublishOnly": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbcc2006/cookie-sync.git"
+  },
+  "homepage": "https://cookie-sync.ivjn.us",
+  "bugs": {
+    "url": "https://github.com/mbcc2006/cookie-sync/issues"
+  },
+  "keywords": [
+    "cookies",
+    "playwright",
+    "browser",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "playwright-core": "^1.55.0",
