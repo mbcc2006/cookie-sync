@@ -5,7 +5,7 @@ import { chromium } from "playwright-core";
 import { decryptFrom, generateKeyPair } from "./crypto.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
-const relay = process.env.COOKIE_SYNC_RELAY || "http://127.0.0.1:8787";
+const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
@@ -116,6 +116,7 @@ async function browse(url) {
 }
 
 function status() {
+  console.log(`Relay: ${relay}`);
   console.log(`State directory: ${stateDirectory()}`);
   try {
     const pair = readJson("pair.json");
@@ -133,8 +134,8 @@ try {
   else if (command === "wait") await waitForSnapshot(value, option === "--timeout" ? optionValue : undefined);
   else if (command === "browse") await browse(value);
   else if (command === "status") status();
-  else throw new Error("Usage: cookiesync <pair|pull <domain>|wait <domain> [--timeout seconds]|browse <url>|status>");
+  else throw new Error("Usage: cookie-sync <pair|pull <domain>|wait <domain> [--timeout seconds]|browse <url>|status>");
 } catch (error) {
-  console.error(`cookiesync: ${error.message}`);
+  console.error(`cookie-sync: ${error.message}`);
   process.exitCode = 1;
 }
