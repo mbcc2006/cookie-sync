@@ -64,6 +64,15 @@ Fetch every domain currently waiting on the relay:
 cookie-sync pull-all
 ```
 
+Open a URL in the paired Chrome browser from the CLI:
+
+```bash
+cookie-sync open https://cookie-sync.ivjn.us/
+cookie-sync open https://cookie-sync.ivjn.us/#quickstart --browser "Work laptop"
+```
+
+The target browser must be online with the extension running. Only `http://` and `https://` URLs are accepted. The relay forwards the command over the authenticated device WebSocket without storing the URL and waits for the extension to confirm that it created the tab.
+
 Export cookies as a Playwright `storageState` file and use it in a test or config:
 
 ```bash
@@ -140,13 +149,13 @@ cookie-sync wait github.com --timeout 300
 
 ## One-time Console import
 
-For a browser where the extension cannot be installed, create a five-minute, single-use import session:
+For a browser where the extension cannot be installed, create a five-minute, single-use import session. This command creates its own CLI pairing credentials when none exist, so `cookie-sync pair` is not required first:
 
 ```bash
 cookie-sync console github.com
 ```
 
-Open the target site, paste the printed snippet into its DevTools Console, and keep the CLI running. The snippet loads `https://relay.ivjn.us/console-import.js`, verifies the current hostname, encrypts the visible cookies in the page, and uploads them exactly once. The CLI consumes and deletes the envelope immediately.
+The command prints one self-contained `javascript:` URL. Open the target site, paste that URL into its DevTools Console or address bar, and keep the CLI running. It verifies the current hostname and encrypts visible cookies locally, then navigates to the relay's same-origin upload page to submit the ciphertext exactly once. No external script or cross-origin request is made from the target site, so strict `script-src` and `connect-src` policies do not block the import. The CLI consumes and deletes the envelope immediately.
 
 Use the imported snapshot with:
 
@@ -183,6 +192,6 @@ Omitting `--out` prints the JSON to stdout instead. The exported file contains t
 - After the one-time claim, the extension keeps an upload-only token in Chrome local extension storage. The relay stores only its SHA-256 hash. Use `cookie-sync revoke` if the browser or profile is lost.
 - The relay persists ciphertext, not plaintext. It does not provide user accounts or audit logs yet. Use TLS and deploy it on a private network or VPN.
 - Relay endpoints are rate limited per client IP. Pair creation and browser claims use stricter limits to reduce enumeration and resource-exhaustion attacks.
-- Never paste a Console import snippet from an untrusted source. It contains a short-lived upload capability and should only reference `https://relay.ivjn.us/console-import.js`.
+- Never paste a Console import URL from an untrusted source. The URL contains a short-lived upload capability and should navigate only to `https://relay.ivjn.us/console-upload` after encrypting the snapshot locally.
 - Only cookies are synchronized. Local storage, IndexedDB, WebAuthn, and device-bound logins are not transferred.
 - The Chrome extension must be served from an HTTPS relay in real deployments because extension requests can otherwise expose traffic on hostile networks.

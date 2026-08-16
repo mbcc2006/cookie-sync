@@ -220,10 +220,10 @@ const TRANSLATIONS = {
     ko: "참고: 내보낼 때 릴레이는 {exportedRelay}였지만, 이 CLI는 {relay}를 사용 중입니다."
   },
   "info.consoleOpen": {
-    en: "Open https://{domain}/, open DevTools Console, then paste this script:\n",
-    zh: "打开 https://{domain}/，打开 DevTools 控制台，然后粘贴以下脚本：\n",
-    ja: "https://{domain}/ を開き、DevTools コンソールを開いてこのスクリプトを貼り付けてください：\n",
-    ko: "https://{domain}/ 를 열고 DevTools 콘솔을 연 다음 아래 스크립트를 붙여넣으세요:\n"
+    en: "Open https://{domain}/, then paste this URL into DevTools Console or the address bar:\n",
+    zh: "打开 https://{domain}/，然后将以下 URL 粘贴到 DevTools 控制台或地址栏：\n",
+    ja: "https://{domain}/ を開き、次の URL を DevTools コンソールまたはアドレスバーに貼り付けてください：\n",
+    ko: "https://{domain}/ 를 연 다음 아래 URL을 DevTools 콘솔 또는 주소 표시줄에 붙여넣으세요:\n"
   },
   "info.consoleReason": {
     en: "\nReason: {reason}",
@@ -393,11 +393,23 @@ const TRANSLATIONS = {
     ja: "Cookie {count} 件を {format} 形式で {file} に保存しました。",
     ko: "쿠키 {count}개를 {format} 형식으로 {file}에 저장했습니다."
   },
+  "error.invalidUrl": {
+    en: "Provide a valid HTTP or HTTPS URL.",
+    zh: "请提供有效的 HTTP 或 HTTPS URL。",
+    ja: "有効な HTTP または HTTPS URL を指定してください。",
+    ko: "유효한 HTTP 또는 HTTPS URL을 입력하세요."
+  },
+  "info.openedUrl": {
+    en: "Opened {url} in {browser}.",
+    zh: "已在 {browser} 中打开 {url}。",
+    ja: "{browser} で {url} を開きました。",
+    ko: "{browser}에서 {url}을(를) 열었습니다."
+  },
   "error.usage": {
-    en: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    zh: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    ja: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    ko: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>"
+    en: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    zh: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    ja: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    ko: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|open <url> [--browser ID]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>"
   }
 };
 

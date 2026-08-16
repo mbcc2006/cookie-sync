@@ -116,7 +116,19 @@ async function connectDeviceSocket() {
   url.searchParams.set("deviceId", deviceId); url.searchParams.set("token", uploadToken);
   deviceSocket?.close();
   deviceSocket = new WebSocket(url);
-  deviceSocket.onmessage = (event) => { const message = JSON.parse(event.data); if (message.type === "access-request") showAccessRequest({ id: message.requestId, ...message }); };
+  deviceSocket.onmessage = async (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "access-request") return showAccessRequest({ id: message.requestId, ...message });
+    if (message.type !== "open-url") return;
+    try {
+      const url = new URL(message.url);
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only HTTP and HTTPS URLs can be opened.");
+      await chrome.tabs.create({ url: url.href });
+      deviceSocket?.send(JSON.stringify({ type: "command-result", commandId: message.commandId, ok: true }));
+    } catch (error) {
+      deviceSocket?.send(JSON.stringify({ type: "command-result", commandId: message.commandId, ok: false, error: error.message }));
+    }
+  };
 }
 
 chrome.cookies.onChanged.addListener(({ cookie }) => schedule(cookie.domain.replace(/^\./, "")));

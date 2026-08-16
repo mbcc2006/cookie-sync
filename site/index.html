@@ -32,7 +32,7 @@
   <main id="top">
     <section class="hero wrap">
       <div class="hero-copy reveal">
-        <p class="eyebrow"><span></span> Remote session bridge / v0.7</p>
+        <p class="eyebrow"><span></span> Remote session bridge / v0.8</p>
         <h1><span data-i18n="hero.title1">让无头浏览器</span><br><em data-i18n="hero.title2">保持登录。</em></h1>
         <p class="lead" data-i18n="hero.lead">浏览器只需授权一次，CookieSync 就会将所有允许域名的 Cookie 端到端加密，同步给另一台设备上的 CLI 和无头 Chrome。</p>
         <div class="hero-actions">
@@ -126,6 +126,7 @@
         <article class="feature-card reveal delay-1"><span>08 / REASON</span><h3 data-i18n="feature8.title">每次读取说明用途</h3><p data-i18n="feature8.body">CLI 可通过 --reason 说明为什么需要 Cookie。原因会显示在 Chrome 通知、审计记录和一次性 Console 导入输出中。</p><code>--reason "Smoke test"</code></article>
         <article class="feature-card reveal"><span>09 / PLAYWRIGHT</span><h3 data-i18n="feature9.title">直接生成登录状态</h3><p data-i18n="feature9.body">将同步的 Cookie 导出为标准 Playwright storageState，测试和自动化任务可直接加载。</p><code>cookie-sync playwright github.com</code></article>
         <article class="feature-card reveal delay-1"><span>10 / PORTABLE</span><h3 data-i18n="feature10.title">JSON 与 cookies.txt</h3><p data-i18n="feature10.body">输出原始 Cookie JSON 或 Netscape cookies.txt，直接交给脚本、curl、wget 和其他工具。</p><code>--format json|txt</code></article>
+        <article class="feature-card reveal"><span>11 / REMOTE OPEN</span><h3 data-i18n="feature11.title">从 CLI 打开网页</h3><p data-i18n="feature11.body">向在线的指定浏览器发送 HTTP/HTTPS URL，由扩展创建新标签页并向 CLI 确认结果。</p><code>cookie-sync open https://cookie-sync.ivjn.us/</code></article>
       </div>
     </section>
 
@@ -161,7 +162,10 @@ cookie-sync browser set 93cd5c4f --alias "Work laptop"
 
 <span data-i18n="qs.use.c3"># 拉取并使用指定浏览器的 Cookie</span>
 cookie-sync pull-all --browser "Work laptop"
-cookie-sync browse https://github.com/ --browser "Work laptop"</pre>
+cookie-sync browse https://github.com/ --browser "Work laptop"
+
+<span data-i18n="qs.use.c4"># 在指定浏览器中远程打开网页</span>
+cookie-sync open https://cookie-sync.ivjn.us/ --browser "Work laptop"</pre>
           <button class="mini-copy" data-copy="cookie-sync browsers" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="export">
@@ -174,7 +178,7 @@ cookie-sync cookies github.com --format txt --out cookies.txt</pre>
           <button class="mini-copy" data-copy="cookie-sync playwright github.com --out playwright/.auth/github.json" data-i18n="copy.button">复制</button>
         </div>
         <div class="command-panel hidden" id="console">
-          <pre><span data-i18n="qs.console.c1"># 创建五分钟一次性导入并打印 Console 脚本</span>
+          <pre><span data-i18n="qs.console.c1"># 自动配对并输出一个五分钟有效的 JavaScript 导入 URL</span>
 cookie-sync console github.com
 
 <span data-i18n="qs.console.c2"># 仅支持页面可见的非 HttpOnly Cookie</span>

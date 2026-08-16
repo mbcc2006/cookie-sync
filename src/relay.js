@@ -10,6 +10,7 @@ const PAIR_TTL_MS = 10 * 60 * 1000;
 const MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const IMPORT_TTL_MS = 5 * 60 * 1000;
 const ACCESS_TTL_MS = 2 * 60 * 1000;
+const DEVICE_COMMAND_TIMEOUT_MS = 10 * 1000;
 const AUDIT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const AUDIT_MAX_PER_DEVICE = 500;
 const DEFAULT_RATE_LIMITS = {
@@ -48,6 +49,16 @@ function clientMetadata(value = {}) {
 
 function accessReason(value, fallback = "CookieSync CLI request") {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 300) : fallback;
+}
+
+function openUrl(value) {
+  if (typeof value !== "string" || value.length > 4096) return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 function clientIp(request) {
@@ -144,33 +155,11 @@ function send(response, status, value, origin, extraHeaders = {}) {
   response.end(JSON.stringify(value));
 }
 
-function consoleImportScript() {
-  return `(() => {
-  const script = document.currentScript;
-  const config = JSON.parse(decodeURIComponent(script.src.split("#")[1] || ""));
-  const b64 = bytes => btoa(String.fromCharCode(...bytes));
-  const decodePem = pem => Uint8Array.from(atob(pem.replace(/-----(BEGIN|END) PUBLIC KEY-----|\\s/g, "")), c => c.charCodeAt(0));
-  async function run() {
-    if (location.hostname !== config.domain && !location.hostname.endsWith("." + config.domain)) throw new Error("CookieSync domain mismatch");
-    console.info("CookieSync access reason:", config.reason);
-    const recipient = await crypto.subtle.importKey("spki", decodePem(config.publicKey), { name: "X25519" }, false, []);
-    const ephemeral = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
-    const shared = await crypto.subtle.deriveBits({ name: "X25519", public: recipient }, ephemeral.privateKey, 256);
-    const material = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
-    const key = await crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(), info: new TextEncoder().encode("cookie-sync-v1") }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
-    const cookies = document.cookie ? document.cookie.split(/;\\s*/).map(part => { const i = part.indexOf("="); return { name: decodeURIComponent(part.slice(0, i)), value: decodeURIComponent(part.slice(i + 1)), domain: location.hostname, path: "/", secure: location.protocol === "https:", httpOnly: false, sameSite: "unspecified" }; }) : [];
-    const snapshot = { domain: config.domain, cookies, source: "console", userAgent: navigator.userAgent, syncedAt: new Date().toISOString() };
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(snapshot))));
-    const raw = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
-    const prefix = Uint8Array.from([48,42,48,5,6,3,43,101,110,3,33,0]); const spki = new Uint8Array(44); spki.set(prefix); spki.set(raw, 12);
-    const envelope = { ephemeralPublicKey: "-----BEGIN PUBLIC KEY-----\\n" + b64(spki) + "\\n-----END PUBLIC KEY-----", iv: b64(iv), ciphertext: b64(encrypted.slice(0,-16)), tag: b64(encrypted.slice(-16)) };
-    const response = await fetch(config.relay + "/v1/imports/" + config.id, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + config.uploadToken }, body: JSON.stringify({ envelope }) });
-    if (!response.ok) throw new Error((await response.json()).error || "CookieSync upload failed");
-    console.info("CookieSync: uploaded " + cookies.length + " non-HttpOnly cookies for " + config.domain + ". Reason: " + config.reason);
-  }
-  run().catch(error => console.error("CookieSync:", error));
-})();`;
+function consoleUploadPage() {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>CookieSync Console Import</title><style>
+  :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f0e6;color:#13251d;font-family:ui-monospace,monospace}.card{width:min(600px,calc(100% - 32px));border:1px solid #13251d;background:#fbf8ef;padding:36px;box-shadow:10px 10px 0 #c9ff45}h1{margin:0 0 18px;font:700 28px ui-sans-serif,sans-serif}p{line-height:1.6}.bad{color:#a43b1c}</style></head><body><main class="card"><h1>CookieSync Console Import</h1><p id="status">Uploading the encrypted Cookie snapshot...</p></main><script>
+  (async()=>{const status=document.getElementById("status");try{const value=JSON.parse(decodeURIComponent(location.hash.slice(1)));history.replaceState(null,"",location.pathname);if(!value.id||!value.uploadToken||!value.envelope)throw Error("Invalid upload payload.");const response=await fetch("/v1/imports/"+encodeURIComponent(value.id),{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+value.uploadToken},body:JSON.stringify({envelope:value.envelope})});if(!response.ok)throw Error((await response.json()).error||"Upload failed.");status.textContent="Uploaded "+Number(value.count||0)+" cookies for "+String(value.domain||"")+". You can close this page."}catch(error){status.className="bad";status.textContent="CookieSync: "+error.message}})();
+  </script></body></html>`;
 }
 
 function pairingPage(pair) {
@@ -207,6 +196,7 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
 
   const sockets = new Map();
   const deviceSockets = new Map();
+  const pendingDeviceCommands = new Map();
   const vapidPublicKey = process.env.COOKIE_SYNC_VAPID_PUBLIC_KEY;
   const vapidPrivateKey = process.env.COOKIE_SYNC_VAPID_PRIVATE_KEY;
   if (vapidPublicKey && vapidPrivateKey) webpush.setVapidDetails(process.env.COOKIE_SYNC_VAPID_SUBJECT || "mailto:admin@ivjn.us", vapidPublicKey, vapidPrivateKey);
@@ -221,7 +211,13 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
   };
   const notifyDevice = (deviceId, event) => {
     const payload = JSON.stringify(event);
-    for (const socket of deviceSockets.get(deviceId) || []) if (socket.readyState === 1) socket.send(payload);
+    let sent = 0;
+    for (const socket of deviceSockets.get(deviceId) || []) {
+      if (socket.readyState !== 1) continue;
+      socket.send(payload);
+      sent += 1;
+    }
+    return sent;
   };
   const audit = (deviceId, requestId, action, details = {}) => {
     store.auditEvents.push({ id: crypto.randomUUID(), deviceId, requestId, action, createdAt: Date.now(), ...details });
@@ -256,9 +252,9 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", "x-content-type-options": "nosniff" });
       return response.end(request.method === "HEAD" ? undefined : pairingPage(valid));
     }
-    if (request.method === "GET" && url.pathname === "/console-import.js") {
-      response.writeHead(200, { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" });
-      return response.end(consoleImportScript());
+    if (request.method === "GET" && url.pathname === "/console-upload") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'", "x-content-type-options": "nosniff" });
+      return response.end(consoleUploadPage());
     }
     if (url.pathname !== "/healthz") {
       const ip = clientIp(request);
@@ -462,6 +458,36 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       return send(response, 200, result, origin);
     }
 
+    if (request.method === "POST" && url.pathname === "/v1/device-commands/open") {
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const pair = pairs.get(input.code);
+      const device = store.devices.get(input.deviceId);
+      if (!pair || !device || device.code !== input.code || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      const targetUrl = openUrl(input.url);
+      if (!targetUrl) return send(response, 400, { error: "A valid HTTP or HTTPS URL is required." }, origin);
+      const id = crypto.randomUUID();
+      const result = new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingDeviceCommands.delete(id);
+          resolve({ status: 504, value: { error: "Browser did not acknowledge the open command." } });
+        }, DEVICE_COMMAND_TIMEOUT_MS);
+        pendingDeviceCommands.set(id, { deviceId: device.id, resolve: (value) => {
+          clearTimeout(timer);
+          pendingDeviceCommands.delete(id);
+          resolve(value.ok
+            ? { status: 200, value: { ok: true, url: targetUrl } }
+            : { status: 502, value: { error: typeof value.error === "string" ? value.error.slice(0, 300) : "Browser could not open the URL." } });
+        } });
+      });
+      if (!notifyDevice(device.id, { type: "open-url", commandId: id, url: targetUrl })) {
+        pendingDeviceCommands.get(id)?.resolve({ ok: false, error: "Browser is offline." });
+        const outcome = await result;
+        return send(response, 409, outcome.value, origin);
+      }
+      const outcome = await result;
+      return send(response, outcome.status, outcome.value, origin);
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/messages") {
       if (typeof input.deviceId !== "string" || !isDomain(input.domain) || !input.envelope) {
         return send(response, 400, { error: "A device ID, valid domain, and envelope are required." }, origin);
@@ -574,6 +600,13 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
         if (!deviceSockets.has(deviceId)) deviceSockets.set(deviceId, new Set());
         deviceSockets.get(deviceId).add(client);
         client.on("close", () => deviceSockets.get(deviceId)?.delete(client));
+        client.on("message", (data) => {
+          try {
+            const event = JSON.parse(data.toString());
+            const pending = event.type === "command-result" && typeof event.commandId === "string" ? pendingDeviceCommands.get(event.commandId) : null;
+            if (pending?.deviceId === deviceId) pending.resolve({ ok: event.ok === true, error: event.error });
+          } catch {}
+        });
         client.send(JSON.stringify({ type: "connected" }));
       });
     }

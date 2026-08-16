@@ -163,6 +163,13 @@
       ja: "生の Cookie JSON または Netscape cookies.txt を出力し、スクリプト、curl、wget などで利用できます。",
       ko: "원본 쿠키 JSON 또는 Netscape cookies.txt를 출력해 스크립트, curl, wget 등의 도구에서 사용할 수 있습니다."
     },
+    "feature11.title": { en: "Open pages from the CLI", zh: "从 CLI 打开网页", ja: "CLI からページを開く", ko: "CLI에서 페이지 열기" },
+    "feature11.body": {
+      en: "Send an HTTP or HTTPS URL to a selected online browser; the extension creates a new tab and confirms the result to the CLI.",
+      zh: "向在线的指定浏览器发送 HTTP/HTTPS URL，由扩展创建新标签页并向 CLI 确认结果。",
+      ja: "オンラインの対象ブラウザへ HTTP/HTTPS URL を送り、拡張機能が新しいタブを作成して結果を CLI に返します。",
+      ko: "온라인 상태인 선택한 브라우저로 HTTP/HTTPS URL을 보내면 확장 프로그램이 새 탭을 만들고 결과를 CLI에 확인합니다."
+    },
     "quickstart.title": { en: "Start syncing now", zh: "现在开始同步", ja: "今すぐ同期を始める", ko: "지금 동기화 시작하기" },
     "tabs.install": { en: "Install", zh: "安装", ja: "インストール", ko: "설치" },
     "tabs.pair": { en: "Pair", zh: "配对", ja: "ペアリング", ko: "페어링" },
@@ -179,9 +186,10 @@
     "qs.use.c1": { en: "# View browser identity, UA, and system info", zh: "# 查看浏览器身份、UA 和系统信息", ja: "# ブラウザのアイデンティティ、UA、システム情報を確認", ko: "# 브라우저 아이덴티티, UA, 시스템 정보 확인" },
     "qs.use.c2": { en: "# Set an alias for a browser", zh: "# 为浏览器设置别名", ja: "# ブラウザにエイリアスを設定", ko: "# 브라우저에 별칭 설정" },
     "qs.use.c3": { en: "# Pull and use cookies from a specific browser", zh: "# 拉取并使用指定浏览器的 Cookie", ja: "# 特定のブラウザの Cookie を取得して使用", ko: "# 특정 브라우저의 쿠키를 가져와 사용" },
+    "qs.use.c4": { en: "# Remotely open a page in the selected browser", zh: "# 在指定浏览器中远程打开网页", ja: "# 対象ブラウザでページをリモート表示", ko: "# 선택한 브라우저에서 원격으로 페이지 열기" },
     "qs.export.c1": { en: "# Create auth state that Playwright can load directly", zh: "# 生成 Playwright 可直接加载的登录状态", ja: "# Playwright が直接読み込める認証状態を生成", ko: "# Playwright에서 바로 불러올 수 있는 인증 상태 생성" },
     "qs.export.c2": { en: "# Export raw JSON or Netscape cookies.txt", zh: "# 输出原始 JSON 或 Netscape cookies.txt", ja: "# 生の JSON または Netscape cookies.txt を出力", ko: "# 원본 JSON 또는 Netscape cookies.txt 내보내기" },
-    "qs.console.c1": { en: "# Create a five-minute single-use import and print the Console script", zh: "# 创建五分钟一次性导入并打印 Console 脚本", ja: "# 5 分間有効な一度限りのインポートを作成し、コンソールスクリプトを出力", ko: "# 5분간 유효한 1회성 가져오기를 생성하고 콘솔 스크립트 출력" },
+    "qs.console.c1": { en: "# Auto-pair and print one five-minute JavaScript import URL", zh: "# 自动配对并输出一个五分钟有效的 JavaScript 导入 URL", ja: "# 自動ペアリングし、5 分間有効な JavaScript インポート URL を 1 つ出力", ko: "# 자동 페어링 후 5분간 유효한 JavaScript 가져오기 URL 하나 출력" },
     "qs.console.c2": { en: "# Only page-visible, non-HttpOnly cookies are supported", zh: "# 仅支持页面可见的非 HttpOnly Cookie", ja: "# ページ上に見える HttpOnly 以外の Cookie のみ対応", ko: "# 페이지에 보이는 HttpOnly가 아닌 쿠키만 지원" },
     "qs.revoke.c1": { en: "# Revoke every browser and live subscription under this pairing", zh: "# 撤销当前配对下的所有浏览器和实时订阅", ja: "# このペアリングに属するすべてのブラウザとライブ購読を取り消し", ko: "# 이 페어링에 속한 모든 브라우저와 실시간 구독 취소" },
     "qs.revoke.c2": { en: "# Run this immediately if a browser is lost or an authorization leaks", zh: "# 浏览器丢失或授权泄漏时立即执行", ja: "# ブラウザを紛失した、または認可が漏洩した場合は直ちに実行", ko: "# 브라우저를 분실하거나 승인이 유출되면 즉시 실행" },

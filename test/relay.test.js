@@ -312,6 +312,23 @@ test("serves a no-store pairing page only for valid pair codes", async (context)
   assert.match(await invalid.text(), /无效或已过期/);
 });
 
+test("serves a locked-down same-origin Console upload page", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+
+  const response = await fetch(`${url}/console-upload`);
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  assert.match(response.headers.get("content-security-policy"), /connect-src 'self'/);
+  assert.match(html, /history\.replaceState/);
+  assert.match(html, /fetch\("\/v1\/imports\/"/);
+  assert.equal(html.includes("console-import.js"), false);
+});
+
 test("provides an isolated metadata-only access audit to each browser", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -369,4 +386,48 @@ test("bounds access reasons and returns Console import reasons", async (context)
     method: "POST", headers, body: JSON.stringify({ code: pair.value.code, domain: "relay.ivjn.us", reason: "Temporary migration" })
   });
   assert.equal(session.value.reason, "Temporary migration");
+});
+
+test("sends authenticated open URL commands only to an online device", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const other = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const headers = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const command = (input, requestHeaders = headers) => json(url, "/v1/device-commands/open", {
+    method: "POST", headers: requestHeaders, body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, ...input })
+  });
+
+  assert.equal((await command({ url: "https://cookie-sync.ivjn.us/" }, { "content-type": "application/json" })).response.status, 401);
+  assert.equal((await command({ url: "javascript:alert(1)" })).response.status, 400);
+  assert.equal((await command({ url: "https://cookie-sync.ivjn.us/" })).response.status, 409);
+
+  const socketUrl = url.replace("http", "ws") + `/v1/device/ws?deviceId=${device.value.deviceId}&token=${device.value.uploadToken}`;
+  const socket = new WebSocket(socketUrl);
+  context.after(() => socket.close());
+  await new Promise((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); });
+  const otherSocketUrl = url.replace("http", "ws") + `/v1/device/ws?deviceId=${other.value.deviceId}&token=${other.value.uploadToken}`;
+  const otherSocket = new WebSocket(otherSocketUrl);
+  context.after(() => otherSocket.close());
+  await new Promise((resolve, reject) => { otherSocket.once("open", resolve); otherSocket.once("error", reject); });
+  const received = new Promise((resolve) => socket.on("message", (data) => {
+    const event = JSON.parse(data.toString());
+    if (event.type !== "open-url") return;
+    otherSocket.send(JSON.stringify({ type: "command-result", commandId: event.commandId, ok: true }));
+    setTimeout(() => socket.send(JSON.stringify({ type: "command-result", commandId: event.commandId, ok: true })), 10);
+    resolve(event);
+  }));
+  const opened = command({ url: "https://cookie-sync.ivjn.us/#quickstart" });
+  assert.equal((await opened).response.status, 200);
+  assert.equal((await received).url, "https://cookie-sync.ivjn.us/#quickstart");
 });

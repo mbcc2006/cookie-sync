@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { chromium } from "playwright-core";
 import WebSocket from "ws";
+import { consoleImportUrl } from "./console.js";
 import { toNetscapeCookies } from "./cookies.js";
 import { decryptFrom, generateKeyPair } from "./crypto.js";
 import { resolveLang, setLang, t } from "./i18n.js";
@@ -13,7 +14,7 @@ import { toPlaywrightCookie, toPlaywrightStorageState } from "./playwright.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
-const CLI_VERSION = "0.7.0";
+const CLI_VERSION = "0.8.0";
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
@@ -123,7 +124,7 @@ async function requestBrowserAccess(browser, domains, reason) {
   throw new Error(t("error.approvalTimeout"));
 }
 
-async function createPair() {
+async function createPairCredentials() {
   const identity = credentials();
   const pair = await request("/v1/pairs", {
     method: "POST",
@@ -131,6 +132,11 @@ async function createPair() {
     body: JSON.stringify({ publicKey: identity.publicKey })
   });
   writePrivateJson("pair.json", pair);
+  return pair;
+}
+
+async function createPair() {
+  const pair = await createPairCredentials();
   const pairUrl = `${relay}/?pair=${encodeURIComponent(pair.code)}`;
   console.log(t("info.pairCode", { code: pair.code }));
   console.log(t("info.relay", { relay }));
@@ -217,16 +223,21 @@ async function consoleImport(domain, reason) {
   domain = normalizeDomain(domain);
   reason = reason || t("reason.console", { domain });
   const identity = credentials();
-  const { code, readToken } = pairCredentials();
-  const session = await request("/v1/imports", {
+  let pair;
+  try {
+    pair = pairCredentials();
+  } catch {
+    pair = await createPairCredentials();
+  }
+  const createSession = ({ code, readToken }) => request("/v1/imports", {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
     body: JSON.stringify({ code, domain, reason })
   });
+  const session = await createSession(pair);
+  const { code, readToken } = pair;
   const config = { relay, id: session.id, domain, reason: session.reason, uploadToken: session.uploadToken, publicKey: session.publicKey };
-  const scriptUrl = `${relay}/console-import.js#${encodeURIComponent(JSON.stringify(config))}`;
-  const snippet = `const s=document.createElement('script');s.src=${JSON.stringify(scriptUrl)};document.documentElement.appendChild(s);`;
   console.log(t("info.consoleOpen", { domain }));
-  console.log(snippet);
+  console.log(consoleImportUrl(config));
   console.log(t("info.consoleReason", { reason: session.reason }));
   console.log(t("info.consoleWaiting"));
   while (Date.now() < session.expiresAt) {
@@ -346,6 +357,23 @@ async function exportCookies(domain, format, outFile, browserSelector, reason) {
   console.log(t("info.cookiesSaved", { count: snapshot.cookies.length, format, file: outFile }));
 }
 
+async function open(url, browserSelector) {
+  let target;
+  try {
+    target = new URL(url);
+  } catch {
+    throw new Error(t("error.invalidUrl"));
+  }
+  if (!["http:", "https:"].includes(target.protocol)) throw new Error(t("error.invalidUrl"));
+  const browser = await resolveBrowser(browserSelector);
+  const { code, readToken } = pairCredentials();
+  await request("/v1/device-commands/open", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
+    body: JSON.stringify({ code, deviceId: browser.id, url: target.href })
+  });
+  console.log(t("info.openedUrl", { url: target.href, browser: browser.alias || browser.id.slice(0, 8) }));
+}
+
 function status() {
   console.log(t("info.relay", { relay }));
   console.log(t("info.stateDirectory", { dir: stateDirectory() }));
@@ -385,6 +413,7 @@ try {
   else if (command === "browse") await browse(value, optionValue("--browser"), optionValue("--reason"));
   else if (command === "playwright") await playwright(value, optionValue("--out"), optionValue("--browser"), optionValue("--reason"));
   else if (command === "cookies") await exportCookies(value, optionValue("--format"), optionValue("--out"), optionValue("--browser"), optionValue("--reason"));
+  else if (command === "open") await open(value, optionValue("--browser"));
   else if (command === "revoke") await revoke();
   else if (command === "export") await exportPair(optionValue("--out"));
   else if (command === "import") await importPair(value);
