@@ -1,0 +1,17 @@
+{
+  "name": "cookie-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "cookiesync": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/relay.js",
+    "cli": "node src/cli.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

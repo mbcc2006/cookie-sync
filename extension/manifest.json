@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "CookieSync Local",
+  "version": "0.1.0",
+  "description": "Encrypt selected site cookies for a paired CookieSync CLI.",
+  "permissions": ["cookies", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

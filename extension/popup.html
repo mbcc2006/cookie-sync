@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CookieSync</title>
+  <style>
+    body { font: 14px sans-serif; margin: 16px; min-width: 300px; }
+    label, input, button { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
+    button { padding: 8px; }
+    #status { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <strong>CookieSync</strong>
+  <label>Relay URL <input id="relay" placeholder="https://relay.example.com"></label>
+  <label>Pair code <input id="code" placeholder="ABC123..."></label>
+  <label>Domain <input id="domain" placeholder="github.com"></label>
+  <button id="sync">Encrypt and sync cookies</button>
+  <p id="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
