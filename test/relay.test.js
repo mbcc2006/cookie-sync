@@ -36,23 +36,23 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({
       code: pair.value.code,
-      domain: "example.com",
-      envelope: encryptFor(identity.publicKey, { domain: "example.com", cookies: [] })
+      domain: "relay.ivjn.us",
+      envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] })
     })
   });
   assert.equal(upload.response.status, 201);
 
-  const blocked = await json(url, `/v1/messages?code=${pair.value.code}&domain=example.com`);
+  const blocked = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`);
   assert.equal(blocked.response.status, 401);
 
   const headers = { authorization: `Bearer ${pair.value.readToken}` };
-  const fetched = await json(url, `/v1/messages?code=${pair.value.code}&domain=example.com`, { headers });
+  const fetched = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`, { headers });
   assert.equal(fetched.response.status, 200);
   assert.equal(fetched.value.id, upload.value.id);
 
   const removed = await json(url, `/v1/messages/${upload.value.id}`, { method: "DELETE", headers });
   assert.equal(removed.response.status, 204);
-  const missing = await json(url, `/v1/messages?code=${pair.value.code}&domain=example.com`, { headers });
+  const missing = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`, { headers });
   assert.equal(missing.response.status, 404);
 });
 
