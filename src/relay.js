@@ -103,7 +103,9 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
     if (input === undefined) return send(response, 413, { error: "Request body is too large." }, origin);
     if (!input) return send(response, 400, { error: "Invalid JSON." }, origin);
 
-    if (request.method === "GET" && url.pathname === "/healthz") return send(response, 200, { ok: true }, origin);
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/healthz") {
+      return send(response, 200, { ok: true }, origin);
+    }
 
     if (request.method === "POST" && url.pathname === "/v1/pairs") {
       if (typeof input.publicKey !== "string" || input.publicKey.length > 1000) {
@@ -172,5 +174,6 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 8787);
-  createRelay().listen(port, "0.0.0.0", () => console.log(`CookieSync relay listening on port ${port}`));
+  const host = process.env.HOST || "127.0.0.1";
+  createRelay().listen(port, host, () => console.log(`CookieSync relay listening on ${host}:${port}`));
 }
