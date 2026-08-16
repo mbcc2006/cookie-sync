@@ -81,6 +81,33 @@ async function pull(domain) {
   console.log(`Saved ${snapshot.cookies.length} cookies for ${domain}.`);
 }
 
+async function pullAll() {
+  const identity = credentials();
+  const { code, readToken } = readJson("pair.json");
+  const { messages } = await request(`/v1/messages?code=${encodeURIComponent(code)}`, {
+    headers: { authorization: `Bearer ${readToken}` }
+  });
+  if (!messages.length) throw new Error("No messages found.");
+  for (const message of messages) {
+    const snapshot = decryptFrom(identity.privateKey, message.envelope);
+    const domain = normalizeDomain(snapshot.domain);
+    if (!Array.isArray(snapshot.cookies)) throw new Error(`Invalid cookie snapshot for ${domain}.`);
+    writePrivateJson(`cookies-${domain}.json`, snapshot);
+    await request(`/v1/messages/${encodeURIComponent(message.id)}`, {
+      method: "DELETE", headers: { authorization: `Bearer ${readToken}` }
+    });
+    console.log(`Saved ${snapshot.cookies.length} cookies for ${domain}.`);
+  }
+}
+
+async function revoke() {
+  const { code, readToken } = readJson("pair.json");
+  await request(`/v1/pairs/${encodeURIComponent(code)}`, {
+    method: "DELETE", headers: { authorization: `Bearer ${readToken}` }
+  });
+  console.log("Revoked all browser upload devices for this pairing.");
+}
+
 async function waitForSnapshot(domain, timeoutSeconds) {
   domain = normalizeDomain(domain);
   const seconds = Number(timeoutSeconds || 300);
@@ -132,10 +159,12 @@ const [command, value, option, optionValue] = process.argv.slice(2);
 try {
   if (command === "pair") await createPair();
   else if (command === "pull") await pull(value);
+  else if (command === "pull-all") await pullAll();
   else if (command === "wait") await waitForSnapshot(value, option === "--timeout" ? optionValue : undefined);
   else if (command === "browse") await browse(value);
+  else if (command === "revoke") await revoke();
   else if (command === "status") status();
-  else throw new Error("Usage: cookie-sync <pair|pull <domain>|wait <domain> [--timeout seconds]|browse <url>|status>");
+  else throw new Error("Usage: cookie-sync <pair|pull <domain>|pull-all|wait <domain> [--timeout seconds]|browse <url>|revoke|status>");
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
   process.exitCode = 1;

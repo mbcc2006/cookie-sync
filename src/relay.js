@@ -17,24 +17,30 @@ function safeEqual(left, right) {
   return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function tokenHash(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 function createStore(directory) {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const file = path.join(directory, "messages.json");
   let pairs = new Map();
+  let devices = new Map();
   let messages = new Map();
   try {
     const values = JSON.parse(fs.readFileSync(file, "utf8"));
     pairs = new Map((values.pairs || []).map((pair) => [pair.code, pair]));
+    devices = new Map((values.devices || []).map((device) => [device.id, device]));
     messages = new Map((values.messages || []).map((message) => [message.id, message]));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   function save() {
     const temporary = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], messages: [...messages.values()] })}\n`, { mode: 0o600 });
+    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()] })}\n`, { mode: 0o600 });
     fs.renameSync(temporary, file);
   }
-  return { pairs, messages, save };
+  return { pairs, devices, messages, save };
 }
 
 function cleanup(pairs, store) {
@@ -47,7 +53,7 @@ function cleanup(pairs, store) {
     }
   }
   for (const [code, pair] of pairs) {
-    if (pair.expiresAt <= now && ![...store.messages.values()].some((message) => message.code === code)) {
+    if (pair.expiresAt <= now && ![...store.devices.values()].some((device) => device.code === code) && ![...store.messages.values()].some((message) => message.code === code)) {
       pairs.delete(code);
       changed = true;
     }
@@ -90,7 +96,7 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       response.writeHead(204, {
         "access-control-allow-origin": origin,
         "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-        "access-control-allow-headers": "content-type",
+        "access-control-allow-headers": "content-type, authorization",
         "access-control-max-age": "600",
         vary: "Origin"
       });
@@ -126,17 +132,32 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       return send(response, 200, { publicKey: pair.publicKey, expiresAt: pair.expiresAt }, origin);
     }
 
-    if (request.method === "POST" && url.pathname === "/v1/messages") {
-      if (typeof input.code !== "string" || !isDomain(input.domain) || !input.envelope) {
-        return send(response, 400, { error: "A pair code, valid domain, and envelope are required." }, origin);
-      }
+    if (request.method === "POST" && url.pathname === "/v1/devices") {
+      if (typeof input.code !== "string") return send(response, 400, { error: "A pair code is required." }, origin);
       const pair = pairs.get(input.code);
       if (!pair || pair.expiresAt <= Date.now()) return send(response, 404, { error: "Pair code is invalid or expired." }, origin);
+      const uploadToken = crypto.randomBytes(32).toString("base64url");
+      const device = { id: crypto.randomUUID(), code: pair.code, uploadTokenHash: tokenHash(uploadToken), createdAt: Date.now() };
+      store.devices.set(device.id, device);
+      store.save();
+      return send(response, 201, { deviceId: device.id, uploadToken, publicKey: pair.publicKey }, origin);
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/messages") {
+      if (typeof input.deviceId !== "string" || !isDomain(input.domain) || !input.envelope) {
+        return send(response, 400, { error: "A device ID, valid domain, and envelope are required." }, origin);
+      }
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const device = store.devices.get(input.deviceId);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
       const now = Date.now();
       const message = {
-        id: crypto.randomUUID(), code: input.code, domain: input.domain.toLowerCase(), envelope: input.envelope,
+        id: crypto.randomUUID(), code: device.code, domain: input.domain.toLowerCase(), envelope: input.envelope,
         createdAt: now, expiresAt: now + MESSAGE_TTL_MS
       };
+      for (const [id, existing] of store.messages) {
+        if (existing.code === device.code && existing.domain === message.domain) store.messages.delete(id);
+      }
       store.messages.set(message.id, message);
       store.save();
       return send(response, 201, { id: message.id, expiresAt: message.expiresAt }, origin);
@@ -149,6 +170,10 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const pair = pairs.get(code);
       if (!pair || !token || !safeEqual(token, pair.readToken)) {
         return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      }
+      if (!domain) {
+        const messages = [...store.messages.values()].filter((item) => item.code === code);
+        return send(response, 200, { messages }, origin);
       }
       const message = [...store.messages.values()].reverse().find((item) => item.code === code && item.domain === domain);
       if (!message) return send(response, 404, { error: "No message found." }, origin);
@@ -164,6 +189,18 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
         return send(response, 401, { error: "A valid CLI read token is required." }, origin);
       }
       store.messages.delete(id);
+      store.save();
+      return send(response, 204, {}, origin);
+    }
+
+    if (request.method === "DELETE" && url.pathname.startsWith("/v1/pairs/")) {
+      const code = decodeURIComponent(url.pathname.slice("/v1/pairs/".length));
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const pair = pairs.get(code);
+      if (!pair || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      for (const [id, device] of store.devices) if (device.code === code) store.devices.delete(id);
+      for (const [id, message] of store.messages) if (message.code === code) store.messages.delete(id);
+      pairs.delete(code);
       store.save();
       return send(response, 204, {}, origin);
     }

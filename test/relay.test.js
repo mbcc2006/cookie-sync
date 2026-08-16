@@ -32,15 +32,29 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
   });
   assert.equal(pair.response.status, 201);
 
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  assert.equal(device.response.status, 201);
+
   const upload = await json(url, "/v1/messages", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      code: pair.value.code,
+      deviceId: device.value.deviceId,
       domain: "relay.ivjn.us",
       envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] })
     })
   });
-  assert.equal(upload.response.status, 201);
+  const tokenUpload = await json(url, "/v1/messages", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` },
+    body: JSON.stringify({ deviceId: device.value.deviceId, domain: "relay.ivjn.us", envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] }) })
+  });
+  assert.equal(tokenUpload.response.status, 201);
+  assert.equal(upload.response.status, 401);
+
+  const listed = await json(url, `/v1/messages?code=${pair.value.code}`, { headers: { authorization: `Bearer ${pair.value.readToken}` } });
+  assert.equal(listed.response.status, 200);
+  assert.deepEqual(listed.value.messages.map((message) => message.domain), ["relay.ivjn.us"]);
 
   const blocked = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`);
   assert.equal(blocked.response.status, 401);
@@ -48,9 +62,9 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
   const headers = { authorization: `Bearer ${pair.value.readToken}` };
   const fetched = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`, { headers });
   assert.equal(fetched.response.status, 200);
-  assert.equal(fetched.value.id, upload.value.id);
+  assert.equal(fetched.value.id, tokenUpload.value.id);
 
-  const removed = await json(url, `/v1/messages/${upload.value.id}`, { method: "DELETE", headers });
+  const removed = await json(url, `/v1/messages/${tokenUpload.value.id}`, { method: "DELETE", headers });
   assert.equal(removed.response.status, 204);
   const missing = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`, { headers });
   assert.equal(missing.response.status, 404);
@@ -74,4 +88,27 @@ test("permits configured extension origins and rejects other CORS preflights", a
 
   const denied = await fetch(`${url}/v1/pairs`, { method: "OPTIONS", headers: { origin: "chrome-extension://blocked" } });
   assert.equal(denied.status, 403);
+});
+
+test("keeps claimed upload devices across relay restarts", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const first = await startRelay(directory);
+  const identity = generateKeyPair();
+  const pair = await json(first.url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(first.url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  await new Promise((resolve) => first.relay.close(resolve));
+
+  const second = await startRelay(directory);
+  context.after(() => second.relay.close());
+  const upload = await json(second.url, "/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` },
+    body: JSON.stringify({ deviceId: device.value.deviceId, domain: "relay.ivjn.us", envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] }) })
+  });
+  assert.equal(upload.response.status, 201);
 });
