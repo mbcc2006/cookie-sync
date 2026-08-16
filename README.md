@@ -126,6 +126,18 @@ Revoke all browsers authorized by the current pairing:
 cookie-sync revoke
 ```
 
+## Reuse a pairing on another machine
+
+To run the CLI from a second machine without pairing a new browser, export the current identity and pair credentials and import them there:
+
+```bash
+cookie-sync export --out cookie-sync-export.json
+# copy the file to the other machine over a secure channel, then:
+cookie-sync import cookie-sync-export.json
+```
+
+Omitting `--out` prints the JSON to stdout instead. The exported file contains the CLI's private key and pair read token, so it grants the same Cookie read access as the original machine — handle it like any other credential and delete it once imported.
+
 ## Security limitations
 
 - Cookies are authentication credentials. Treat the CLI machine as trusted.

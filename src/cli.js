@@ -5,6 +5,7 @@ import process from "node:process";
 import { chromium } from "playwright-core";
 import WebSocket from "ws";
 import { decryptFrom, generateKeyPair } from "./crypto.js";
+import { resolveLang, setLang, t } from "./i18n.js";
 import { chromeLaunchArgs, findChrome } from "./platform.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
@@ -14,7 +15,7 @@ const CLI_VERSION = "0.7.0";
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
   if (!value || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(value)) {
-    throw new Error("Provide a valid domain such as github.com.");
+    throw new Error(t("error.invalidDomain"));
   }
   return value;
 }
@@ -22,7 +23,7 @@ function normalizeDomain(domain) {
 async function request(path, options = {}) {
   const response = await fetch(`${relay}${path}`, options);
   const value = response.status === 204 ? undefined : await response.json();
-  if (!response.ok) throw new Error(value?.error || `Request failed: ${response.status}`);
+  if (!response.ok) throw new Error(value?.error || t("error.requestFailed", { status: response.status }));
   return value;
 }
 
@@ -47,24 +48,24 @@ async function browsers() {
 
 async function resolveBrowser(selector) {
   const { devices } = await browsers();
-  if (!devices.length) throw new Error("No authorized browsers found.");
+  if (!devices.length) throw new Error(t("error.noBrowsers"));
   if (!selector && devices.length === 1) return devices[0];
-  if (!selector) throw new Error("Multiple browsers found. Use --browser <ID or alias>.");
+  if (!selector) throw new Error(t("error.multipleBrowsers"));
   const matches = devices.filter((device) => device.id === selector || device.id.startsWith(selector) || device.alias === selector);
-  if (matches.length !== 1) throw new Error(matches.length ? "Browser selector is ambiguous." : `Browser not found: ${selector}`);
+  if (matches.length !== 1) throw new Error(matches.length ? t("error.browserAmbiguous") : t("error.browserNotFound", { selector }));
   return matches[0];
 }
 
 async function listBrowsers() {
   const { devices } = await browsers();
-  if (!devices.length) return console.log("No authorized browsers.");
+  if (!devices.length) return console.log(t("info.noBrowsersList"));
   for (const device of devices) {
-    const name = device.alias || "(no alias)";
+    const name = device.alias || t("label.noAlias");
     console.log(`${device.id.slice(0, 8)}  ${name}`);
-    console.log(`  ${device.metadata?.browser || "Unknown browser"} / ${device.metadata?.os || device.metadata?.platform || "Unknown OS"} / ${device.metadata?.architecture || "unknown arch"}`);
-    console.log(`  UA: ${device.metadata?.userAgent || "unknown"}`);
-    if (device.note) console.log(`  Note: ${device.note}`);
-    console.log(`  Last seen: ${new Date(device.lastSeenAt).toISOString()}`);
+    console.log(`  ${device.metadata?.browser || t("label.unknownBrowser")} / ${device.metadata?.os || device.metadata?.platform || t("label.unknownOS")} / ${device.metadata?.architecture || t("label.unknownArch")}`);
+    console.log(t("label.ua", { ua: device.metadata?.userAgent || t("label.unknownUA") }));
+    if (device.note) console.log(t("label.note", { note: device.note }));
+    console.log(t("label.lastSeen", { time: new Date(device.lastSeenAt).toISOString() }));
   }
 }
 
@@ -75,7 +76,7 @@ async function setBrowserProfile(selector, alias, note) {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
     body: JSON.stringify({ code, ...(alias !== undefined ? { alias } : {}), ...(note !== undefined ? { note } : {}) })
   });
-  console.log(`Updated browser ${device.id.slice(0, 8)}.`);
+  console.log(t("info.browserUpdated", { id: device.id.slice(0, 8) }));
 }
 
 async function requestBrowserAccess(browser, domains, reason) {
@@ -88,7 +89,7 @@ async function requestBrowserAccess(browser, domains, reason) {
     })
   });
   if (access.status === "approved") return access.id;
-  console.log(`Waiting for ${browser.alias || browser.id.slice(0, 8)} to approve Cookie access...`);
+  console.log(t("info.waitingApproval", { browser: browser.alias || browser.id.slice(0, 8) }));
   const wsUrl = new URL("/v1/ws", relay);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
   wsUrl.searchParams.set("code", code);
@@ -109,14 +110,14 @@ async function requestBrowserAccess(browser, domains, reason) {
       headers: { authorization: `Bearer ${readToken}` }
     });
     if (current.status === "approved") { socket?.close(); return access.id; }
-    if (current.status === "denied") { socket?.close(); throw new Error("Browser denied Cookie access."); }
+    if (current.status === "denied") { socket?.close(); throw new Error(t("error.accessDenied")); }
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 3000);
       wake = () => { clearTimeout(timer); resolve(); };
     });
   }
   socket?.close();
-  throw new Error("Browser approval timed out.");
+  throw new Error(t("error.approvalTimeout"));
 }
 
 function toPlaywrightCookie(cookie) {
@@ -147,15 +148,16 @@ async function createPair() {
   });
   writePrivateJson("pair.json", pair);
   const pairUrl = `${relay}/?pair=${encodeURIComponent(pair.code)}`;
-  console.log(`Pair code: ${pair.code}`);
-  console.log(`Relay: ${relay}`);
-  console.log(`Expires: ${new Date(pair.expiresAt).toISOString()}`);
-  console.log(`Pair URL: ${pairUrl}`);
-  console.log("Open the Pair URL in Chrome to prefill and open the CookieSync extension.");
+  console.log(t("info.pairCode", { code: pair.code }));
+  console.log(t("info.relay", { relay }));
+  console.log(t("info.expires", { time: new Date(pair.expiresAt).toISOString() }));
+  console.log(t("info.pairUrl", { url: pairUrl }));
+  console.log(t("info.pairHint"));
 }
 
-async function pull(domain, browserSelector, reason = `Pull Cookie snapshot for ${domain}`) {
+async function pull(domain, browserSelector, reason) {
   domain = normalizeDomain(domain);
+  reason = reason || t("reason.pull", { domain });
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const browser = await resolveBrowser(browserSelector);
@@ -164,15 +166,16 @@ async function pull(domain, browserSelector, reason = `Pull Cookie snapshot for 
     headers: { authorization: `Bearer ${readToken}` }
   });
   const snapshot = decryptFrom(identity.privateKey, message.envelope);
-  if (snapshot.domain !== domain || !Array.isArray(snapshot.cookies)) throw new Error("Invalid cookie snapshot.");
+  if (snapshot.domain !== domain || !Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
   writePrivateJson(`cookies-${browser.id}-${domain}.json`, snapshot);
   await request(`/v1/messages/${encodeURIComponent(message.id)}`, {
     method: "DELETE", headers: { authorization: `Bearer ${readToken}` }
   });
-  console.log(`Saved ${snapshot.cookies.length} cookies for ${domain} from ${browser.alias || browser.id.slice(0, 8)}.`);
+  console.log(t("info.savedCookies", { count: snapshot.cookies.length, domain, browser: browser.alias || browser.id.slice(0, 8) }));
 }
 
-async function pullAll(browserSelector, reason = "Pull all available Cookie snapshots") {
+async function pullAll(browserSelector, reason) {
+  reason = reason || t("reason.pullAll");
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const browser = await resolveBrowser(browserSelector);
@@ -180,17 +183,42 @@ async function pullAll(browserSelector, reason = "Pull all available Cookie snap
   const { messages } = await request(`/v1/messages?code=${encodeURIComponent(code)}&deviceId=${encodeURIComponent(browser.id)}&accessRequestId=${encodeURIComponent(accessRequestId)}`, {
     headers: { authorization: `Bearer ${readToken}` }
   });
-  if (!messages.length) throw new Error("No messages found.");
+  if (!messages.length) throw new Error(t("error.noMessages"));
   for (const message of messages) {
     const snapshot = decryptFrom(identity.privateKey, message.envelope);
     const domain = normalizeDomain(snapshot.domain);
-    if (!Array.isArray(snapshot.cookies)) throw new Error(`Invalid cookie snapshot for ${domain}.`);
+    if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshotFor", { domain }));
     writePrivateJson(`cookies-${browser.id}-${domain}.json`, snapshot);
     await request(`/v1/messages/${encodeURIComponent(message.id)}`, {
       method: "DELETE", headers: { authorization: `Bearer ${readToken}` }
     });
-    console.log(`Saved ${snapshot.cookies.length} cookies for ${domain} from ${browser.alias || browser.id.slice(0, 8)}.`);
+    console.log(t("info.savedCookies", { count: snapshot.cookies.length, domain, browser: browser.alias || browser.id.slice(0, 8) }));
   }
+}
+
+async function exportPair(outFile) {
+  const identity = credentials();
+  const pair = pairCredentials();
+  const bundle = { relay, identity, pair };
+  const json = JSON.stringify(bundle, null, 2);
+  if (outFile) {
+    fs.writeFileSync(outFile, `${json}\n`, { mode: 0o600 });
+    console.log(t("info.exported", { file: outFile }));
+  } else {
+    console.log(json);
+  }
+  console.error(t("warn.exportSecret"));
+}
+
+async function importPair(inFile) {
+  if (!inFile) throw new Error(t("error.importMissingFile"));
+  const bundle = JSON.parse(fs.readFileSync(inFile, "utf8"));
+  if (!bundle.identity?.privateKey || !bundle.identity?.publicKey) throw new Error(t("error.importMissingIdentity"));
+  if (!bundle.pair?.code || !bundle.pair?.readToken) throw new Error(t("error.importMissingPair"));
+  writePrivateJson("identity.json", bundle.identity);
+  writePrivateJson("pair.json", bundle.pair);
+  console.log(t("info.imported", { code: bundle.pair.code }));
+  if (bundle.relay && bundle.relay !== relay) console.log(t("info.importRelayMismatch", { exportedRelay: bundle.relay, relay }));
 }
 
 async function revoke() {
@@ -198,11 +226,12 @@ async function revoke() {
   await request(`/v1/pairs/${encodeURIComponent(code)}`, {
     method: "DELETE", headers: { authorization: `Bearer ${readToken}` }
   });
-  console.log("Revoked all browser upload devices for this pairing.");
+  console.log(t("info.revoked"));
 }
 
-async function consoleImport(domain, reason = `One-time Console Cookie import for ${domain}`) {
+async function consoleImport(domain, reason) {
   domain = normalizeDomain(domain);
+  reason = reason || t("reason.console", { domain });
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const session = await request("/v1/imports", {
@@ -212,26 +241,26 @@ async function consoleImport(domain, reason = `One-time Console Cookie import fo
   const config = { relay, id: session.id, domain, reason: session.reason, uploadToken: session.uploadToken, publicKey: session.publicKey };
   const scriptUrl = `${relay}/console-import.js#${encodeURIComponent(JSON.stringify(config))}`;
   const snippet = `const s=document.createElement('script');s.src=${JSON.stringify(scriptUrl)};document.documentElement.appendChild(s);`;
-  console.log(`Open https://${domain}/, open DevTools Console, then paste this script:\n`);
+  console.log(t("info.consoleOpen", { domain }));
   console.log(snippet);
-  console.log(`\nReason: ${session.reason}`);
-  console.log("Waiting for one-time upload (non-HttpOnly cookies only)...");
+  console.log(t("info.consoleReason", { reason: session.reason }));
+  console.log(t("info.consoleWaiting"));
   while (Date.now() < session.expiresAt) {
     try {
       const result = await request(`/v1/imports/${encodeURIComponent(session.id)}?code=${encodeURIComponent(code)}`, {
         headers: { authorization: `Bearer ${readToken}` }
       });
       const snapshot = decryptFrom(identity.privateKey, result.envelope);
-      if (snapshot.domain !== domain || !Array.isArray(snapshot.cookies)) throw new Error("Invalid console cookie snapshot.");
+      if (snapshot.domain !== domain || !Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidConsoleSnapshot"));
       writePrivateJson(`cookies-console-${domain}.json`, snapshot);
-      console.log(`Saved ${snapshot.cookies.length} non-HttpOnly cookies for ${domain}.`);
+      console.log(t("info.consoleSaved", { count: snapshot.cookies.length, domain }));
       return;
     } catch (error) {
       if (!error.message.includes("has not been uploaded")) throw error;
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
-  throw new Error("Console import session expired.");
+  throw new Error(t("error.consoleExpired"));
 }
 
 async function waitForSnapshot(domain, timeoutSeconds, browserSelector, reason) {
@@ -239,9 +268,9 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector, reason) 
   const browser = await resolveBrowser(browserSelector);
   const { code, readToken } = pairCredentials();
   const seconds = Number(timeoutSeconds || 300);
-  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 3600) throw new Error("Timeout must be between 1 and 3600 seconds.");
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 3600) throw new Error(t("error.timeoutRange"));
   const deadline = Date.now() + seconds * 1000;
-  console.log(`Waiting up to ${seconds}s for ${domain} from ${browser.alias || browser.id.slice(0, 8)}...`);
+  console.log(t("info.waitingFor", { seconds, domain, browser: browser.alias || browser.id.slice(0, 8) }));
   const wsUrl = new URL("/v1/ws", relay);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
   wsUrl.searchParams.set("code", code);
@@ -259,7 +288,7 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector, reason) 
   } catch {}
   while (Date.now() < deadline) {
     try {
-      await pull(domain, browser.id, reason || `Wait for and pull Cookie snapshot for ${domain}`);
+      await pull(domain, browser.id, reason || t("reason.wait", { domain }));
       socket?.close();
       return;
     } catch (error) {
@@ -271,7 +300,7 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector, reason) 
     }
   }
   socket?.close();
-  throw new Error(`Timed out waiting for ${domain}.`);
+  throw new Error(t("error.waitTimeout", { domain }));
 }
 
 async function browse(url, browserSelector, reason) {
@@ -279,14 +308,14 @@ async function browse(url, browserSelector, reason) {
   const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
   if (browserDevice) {
     try {
-      await pull(domain, browserDevice.id, reason || `Launch headless browser for ${url}`);
+      await pull(domain, browserDevice.id, reason || t("reason.browse", { url }));
     } catch (error) {
       if (!error.message.includes("No message found")) throw error;
     }
   }
   const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
   const executablePath = findChrome();
-  if (!executablePath || !fs.existsSync(executablePath)) throw new Error("Chrome or Chromium was not found. Set CHROME_PATH to its executable path.");
+  if (!executablePath || !fs.existsSync(executablePath)) throw new Error(t("error.chromeNotFound"));
   const browser = await chromium.launch({ executablePath, headless: true, args: chromeLaunchArgs() });
   try {
     const context = await browser.newContext({
@@ -303,15 +332,25 @@ async function browse(url, browserSelector, reason) {
 }
 
 function status() {
-  console.log(`Relay: ${relay}`);
-  console.log(`State directory: ${stateDirectory()}`);
+  console.log(t("info.relay", { relay }));
+  console.log(t("info.stateDirectory", { dir: stateDirectory() }));
   try {
     const pair = readJson("pair.json");
-    console.log(`Pair code: ${pair.code}`);
-    console.log(`Pair expires: ${new Date(pair.expiresAt).toISOString()}`);
+    console.log(t("info.pairCode", { code: pair.code }));
+    console.log(t("info.pairExpires", { time: new Date(pair.expiresAt).toISOString() }));
   } catch {
-    console.log("Pair code: none");
+    console.log(t("info.noPairCode"));
   }
+}
+
+function langCommand(value) {
+  if (!value) {
+    const { lang, source } = resolveLang();
+    console.log(t("info.langCurrent", { lang, source: t(`source.${source}`) }));
+    return;
+  }
+  const applied = setLang(value);
+  console.log(t("info.langSet", { lang: applied }));
 }
 
 const args = process.argv.slice(2);
@@ -330,8 +369,11 @@ try {
   else if (command === "wait") await waitForSnapshot(value, optionValue("--timeout"), optionValue("--browser"), optionValue("--reason"));
   else if (command === "browse") await browse(value, optionValue("--browser"), optionValue("--reason"));
   else if (command === "revoke") await revoke();
+  else if (command === "export") await exportPair(optionValue("--out"));
+  else if (command === "import") await importPair(value);
+  else if (command === "lang") langCommand(value);
   else if (command === "status") status();
-  else throw new Error("Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|revoke|status>");
+  else throw new Error(t("error.usage"));
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
   process.exitCode = 1;

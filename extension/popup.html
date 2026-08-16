@@ -21,20 +21,30 @@
 </head>
 <body>
   <strong>CookieSync</strong>
-  <label>Relay URL <input id="relay" value="https://relay.ivjn.us"></label>
-  <label>Pair code <input id="code" placeholder="ABC123..."></label>
-  <label>CLI 读取 Cookie
-    <select id="policy">
-      <option value="notify">默认允许，但通知提示</option>
-      <option value="confirm">每次都需要确认</option>
+  <label><span data-i18n="label.language">Language</span>
+    <select id="lang">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+      <option value="ja">日本語</option>
+      <option value="ko">한국어</option>
     </select>
   </label>
-  <button id="sync">Authorize and sync all permitted domains</button>
+  <label><span data-i18n="label.relay">Relay URL</span><input id="relay" value="https://relay.ivjn.us" disabled></label>
+  <label id="pair-code-label"><span data-i18n="label.pairCode">Pair code</span><input id="code" placeholder="ABC123..."></label>
+  <label><span data-i18n="label.policy">CLI 读取 Cookie</span>
+    <select id="policy">
+      <option value="notify" data-i18n="policy.notify">默认允许，但通知提示</option>
+      <option value="confirm" data-i18n="policy.confirm">每次都需要确认</option>
+    </select>
+  </label>
+  <button id="sync" data-i18n="button.sync.authorize">Authorize and sync all permitted domains</button>
+  <button id="revoke" hidden data-i18n="button.revoke">取消授权</button>
   <p id="status"></p>
   <section id="audit-section" hidden>
-    <div class="audit-head"><strong>Cookie 读取审计</strong><button id="refresh-audit">刷新</button></div>
-    <div id="audit"><p>暂无访问记录。</p></div>
+    <div class="audit-head"><strong data-i18n="audit.title">Cookie 读取审计</strong><button id="refresh-audit" data-i18n="audit.refresh">刷新</button></div>
+    <div id="audit"><p data-i18n="audit.empty">暂无访问记录。</p></div>
   </section>
+  <script src="i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

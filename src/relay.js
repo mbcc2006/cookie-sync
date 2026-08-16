@@ -322,6 +322,21 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       return send(response, 200, { accessPolicy: device.accessPolicy }, origin);
     }
 
+    if (request.method === "DELETE" && url.pathname.startsWith("/v1/devices/") && url.pathname.slice("/v1/devices/".length).indexOf("/") === -1) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/devices/".length));
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const device = store.devices.get(id);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
+      store.devices.delete(id);
+      for (const [messageId, message] of store.messages) if (message.deviceId === id) store.messages.delete(messageId);
+      for (const [requestId, item] of store.accessRequests) if (item.deviceId === id) store.accessRequests.delete(requestId);
+      const audits = store.auditEvents.filter((event) => event.deviceId !== id);
+      store.auditEvents.splice(0, store.auditEvents.length, ...audits);
+      store.save();
+      notifyDevice(id, { type: "revoked" });
+      return send(response, 204, {}, origin);
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/access-requests") {
       const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
       const pair = pairs.get(input.code);

@@ -13,6 +13,8 @@ select { font:inherit; }
 .nav nav { display:flex; gap:34px; font-size:14px; font-weight:600; }
 .nav nav a:hover { color:var(--orange); }
 .nav-cta { font:500 13px var(--mono); border-bottom:1px solid var(--ink); padding-bottom:4px; }
+.nav-right { display:flex; align-items:center; gap:18px; }
+.lang-switch { width:auto; margin:0; font:500 12px var(--mono); border:1px solid var(--line); background:transparent; padding:6px 8px; cursor:pointer; color:var(--ink); }
 .hero { min-height:650px; display:grid; grid-template-columns:1.02fr .98fr; align-items:center; gap:72px; padding-block:76px; }
 .eyebrow { font:600 11px var(--mono); letter-spacing:.16em; text-transform:uppercase; display:flex; align-items:center; gap:9px; }
 .eyebrow span { width:24px; height:2px; background:var(--orange); }

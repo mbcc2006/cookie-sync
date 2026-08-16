@@ -91,6 +91,47 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
   assert.equal(reused.response.status, 403);
 });
 
+test("lets a device revoke its own authorization but not with another device's token", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const other = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  await json(url, "/v1/messages", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` },
+    body: JSON.stringify({ deviceId: device.value.deviceId, domain: "relay.ivjn.us", envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] }) })
+  });
+
+  const wrongToken = await json(url, `/v1/devices/${device.value.deviceId}`, {
+    method: "DELETE", headers: { authorization: `Bearer ${other.value.uploadToken}` }
+  });
+  assert.equal(wrongToken.response.status, 401);
+
+  const revoked = await json(url, `/v1/devices/${device.value.deviceId}`, {
+    method: "DELETE", headers: { authorization: `Bearer ${device.value.uploadToken}` }
+  });
+  assert.equal(revoked.response.status, 204);
+
+  const cliHeaders = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const deviceList = await json(url, `/v1/devices?code=${pair.value.code}`, { headers: cliHeaders });
+  assert.deepEqual(deviceList.value.devices.map((item) => item.id), [other.value.deviceId]);
+
+  const policyAfterRevoke = await json(url, `/v1/devices/${device.value.deviceId}/policy`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` },
+    body: JSON.stringify({ accessPolicy: "confirm" })
+  });
+  assert.equal(policyAfterRevoke.response.status, 401);
+});
+
 test("permits configured extension origins and rejects other CORS preflights", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   const previous = process.env.COOKIE_SYNC_ALLOWED_ORIGINS;

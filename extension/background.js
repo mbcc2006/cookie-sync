@@ -1,5 +1,17 @@
+importScripts("i18n.js");
+
 const syncTimers = new Map();
 let deviceSocket;
+
+async function currentLang() {
+  const { lang } = await chrome.storage.local.get("lang");
+  if (lang && self.CookieSyncI18n.LANGS.includes(lang)) return lang;
+  return self.CookieSyncI18n.detectLang();
+}
+
+async function t(key, params) {
+  return self.CookieSyncI18n.t(await currentLang(), key, params);
+}
 
 async function browserMetadata() {
   const data = navigator.userAgentData;
@@ -47,7 +59,7 @@ async function syncDomain(domain) {
   const envelope = await encrypt(publicKey, { domain, cookies, syncedAt: new Date().toISOString() });
   const metadata = await browserMetadata();
   const response = await fetch(`${relay}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, domain, envelope, metadata }) });
-  if (!response.ok) throw new Error((await response.json()).error || "Cookie upload failed.");
+  if (!response.ok) throw new Error((await response.json()).error || await t("error.uploadFailed"));
 }
 
 function schedule(domain) {
@@ -66,7 +78,7 @@ async function decide(requestId, decision) {
   const response = await fetch(`${relay}/v1/device/access-requests/${requestId}`, {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ decision })
   });
-  if (!response.ok) throw new Error((await response.json()).error || "Decision failed.");
+  if (!response.ok) throw new Error((await response.json()).error || await t("error.decisionFailed"));
 }
 
 async function showAccessRequest(request) {
@@ -74,12 +86,14 @@ async function showAccessRequest(request) {
   if ((await chrome.storage.local.get(key))[key]) return;
   await chrome.storage.local.set({ [key]: true });
   const confirm = request.mode === "confirm" && request.status === "pending";
+  const lang = await currentLang();
+  const i18n = self.CookieSyncI18n;
   try {
     await chrome.notifications.create(`access:${request.id}`, {
-      type: "basic", iconUrl: chrome.runtime.getURL("icon.png"), title: confirm ? "CookieSync 请求读取 Cookie" : "CookieSync 已读取 Cookie",
-      message: `域名：${request.domains.join(", ")}\n原因：${request.reason || "未提供"}`,
+      type: "basic", iconUrl: chrome.runtime.getURL("icon.png"), title: i18n.t(lang, confirm ? "notify.titleConfirm" : "notify.titleDone"),
+      message: `${i18n.t(lang, "audit.domainLabel", { domains: request.domains.join(", ") })}\n${i18n.t(lang, "audit.reasonLabel", { reason: request.reason || i18n.t(lang, "audit.noReason") })}`,
       priority: 2,
-      ...(confirm ? { requireInteraction: true, buttons: [{ title: "允许" }, { title: "拒绝" }] } : {})
+      ...(confirm ? { requireInteraction: true, buttons: [{ title: i18n.t(lang, "notify.allow") }, { title: i18n.t(lang, "notify.deny") }] } : {})
     });
   } catch (error) {
     console.warn("CookieSync notification unavailable:", error.message);
@@ -109,6 +123,7 @@ chrome.cookies.onChanged.addListener(({ cookie }) => schedule(cookie.domain.repl
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "sync-all") Promise.all([syncAll(), connectDeviceSocket(), pollAccessRequests()]).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: error.message }));
   if (message.type === "open-pair") chrome.action.openPopup().catch(() => {});
+  if (message.type === "revoked") { deviceSocket?.close(); deviceSocket = undefined; sendResponse({ ok: true }); }
   return true;
 });
 chrome.runtime.onStartup.addListener(syncAll);
