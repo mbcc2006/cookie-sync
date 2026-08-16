@@ -42,7 +42,7 @@ To wait for a person to press the extension's sync button before continuing an a
 cookie-sync wait github.com --timeout 300
 ```
 
-State is held in `~/.local/share/cookie-sync` with private-file permissions. `browse` uses the installed Google Chrome binary and injects the stored Cookie snapshot into an isolated Playwright context. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
+The CLI runs on Windows, macOS, and Linux with Node.js 20 or newer. Install it with `npm install -g .`, then use `cookie-sync`. State is held in the native user-data directory: `$XDG_STATE_HOME/cookie-sync` (Linux), `~/Library/Application Support/cookie-sync` (macOS), or `%APPDATA%\\cookie-sync` (Windows). `browse` discovers Chrome/Chromium on each platform and injects the stored Cookie snapshot into an isolated Playwright context. Set `CHROME_PATH` when Chrome is installed elsewhere. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
 
 ## Security limitations
 
