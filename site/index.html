@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CookieSync 在不同设备间端到端加密同步浏览器 Cookie，让 CLI 和无头浏览器持续复用登录状态。">
+  <title>CookieSync - 一次授权，持续同步登录状态</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav wrap">
+    <a class="brand" href="#top"><span class="brand-mark">CS</span><span>CookieSync</span></a>
+    <nav aria-label="主导航">
+      <a href="#workflow">工作方式</a>
+      <a href="#security">安全设计</a>
+      <a href="#quickstart">快速开始</a>
+    </nav>
+    <a class="nav-cta" href="https://github.com/mbcc2006/cookie-sync">GitHub <span>↗</span></a>
+  </header>
+
+  <main id="top">
+    <section class="hero wrap">
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span></span> Remote session bridge / v0.2</p>
+        <h1>让无头浏览器<br><em>保持登录。</em></h1>
+        <p class="lead">浏览器只需授权一次，CookieSync 就会将所有允许域名的 Cookie 端到端加密，同步给另一台设备上的 CLI 和无头 Chrome。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#quickstart">开始配置</a>
+          <button class="button ghost copy-command" data-copy="npm install -g github:mbcc2006/cookie-sync">复制安装命令</button>
+        </div>
+        <div class="compat"><span>Windows</span><span>macOS</span><span>Linux</span><span>Chrome MV3</span></div>
+      </div>
+
+      <div class="terminal reveal delay-1" aria-label="CookieSync 终端演示">
+        <div class="terminal-head">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <span>cookie-sync / pair</span>
+          <span class="live"><i></i> relay online</span>
+        </div>
+        <div class="terminal-body">
+          <p><span class="prompt">$</span> cookie-sync pair</p>
+          <p class="muted">Pair code</p>
+          <p class="pair-code">SKHZ-DMGY-2WKP</p>
+          <p class="muted">Relay&nbsp;&nbsp;&nbsp;&nbsp; https://relay.ivjn.us</p>
+          <div class="sync-line"><span class="route browser">Chrome</span><b></b><span class="lock">◆</span><b></b><span class="route cli">CLI</span></div>
+          <div class="events">
+            <p><time>12:04:16</time><span class="ok">SYNC</span> github.com <small>14 cookies</small></p>
+            <p><time>12:04:17</time><span class="ok">SYNC</span> console.cloud.google.com <small>8 cookies</small></p>
+            <p><time>12:04:18</time><span class="ok">SYNC</span> ivjn.cn <small>3 cookies</small></p>
+          </div>
+          <p class="cursor"><span class="prompt">$</span> cookie-sync pull-all <i></i></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="signal-band">
+      <div class="wrap stats">
+        <div><strong>1×</strong><span>只需授权一次</span></div>
+        <div><strong>∞</strong><span>同步多个域名</span></div>
+        <div><strong>E2EE</strong><span>中继无法解密</span></div>
+        <div><strong>15 min</strong><span>自动补偿同步</span></div>
+      </div>
+    </section>
+
+    <section id="workflow" class="section wrap">
+      <div class="section-title reveal">
+        <p class="eyebrow"><span></span> Workflow</p>
+        <h2>三步连接两个世界</h2>
+        <p>桌面浏览器负责认证，远程设备负责自动化。CookieSync 只传递完成任务所需的登录状态。</p>
+      </div>
+      <div class="steps">
+        <article class="step reveal"><b>01</b><div class="step-icon">⌘</div><h3>CLI 创建配对</h3><p>在无头设备运行配对命令，生成 10 分钟有效的一次性验证码。</p><code>cookie-sync pair</code></article>
+        <article class="step reveal delay-1"><b>02</b><div class="step-icon">◎</div><h3>扩展授权一次</h3><p>在 Chrome 扩展输入验证码。扩展领取只能上传、不能读取的设备令牌。</p><code>Chrome → CookieSync</code></article>
+        <article class="step reveal delay-2"><b>03</b><div class="step-icon">↯</div><h3>持续自动同步</h3><p>Cookie 变化、浏览器启动及定时任务都会触发加密同步，无需重复操作。</p><code>cookie-sync pull-all</code></article>
+      </div>
+    </section>
+
+    <section id="security" class="section security-section">
+      <div class="wrap security-grid">
+        <div class="security-copy reveal">
+          <p class="eyebrow light"><span></span> Security model</p>
+          <h2>中继只看见密文。</h2>
+          <p>每个快照在浏览器中完成加密。CLI 的 X25519 私钥永不离开目标设备，中继服务无法恢复 Cookie 内容。</p>
+          <ul>
+            <li><i>01</i><span><strong>端到端加密</strong>X25519 密钥协商、HKDF 与 AES-256-GCM。</span></li>
+            <li><i>02</i><span><strong>权限分离</strong>扩展只有上传令牌，CLI 独占读取令牌。</span></li>
+            <li><i>03</i><span><strong>可立即撤销</strong>设备丢失时，一条命令撤销所有浏览器授权。</span></li>
+          </ul>
+        </div>
+        <div class="crypto-map reveal delay-1">
+          <div class="node source"><small>SOURCE</small><strong>Chrome Extension</strong><span>cookies.onChanged</span></div>
+          <div class="pipe"><span>encrypted envelope</span><b></b></div>
+          <div class="node relay"><small>ZERO KNOWLEDGE</small><strong>relay.ivjn.us</strong><span>ciphertext only</span></div>
+          <div class="pipe"><span>read token</span><b></b></div>
+          <div class="node target"><small>DESTINATION</small><strong>Headless Chrome</strong><span>isolated context</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart" class="section wrap quickstart">
+      <div class="section-title reveal">
+        <p class="eyebrow"><span></span> Quick start</p>
+        <h2>现在开始同步</h2>
+      </div>
+      <div class="commands reveal delay-1">
+        <div class="tabs" role="tablist"><button class="active" data-tab="install">安装</button><button data-tab="pair">配对</button><button data-tab="use">使用</button><button data-tab="revoke">撤销</button></div>
+        <div class="command-panel" id="install"><pre><span># Node.js 20+</span>
+        <div class="command-panel hidden" id="pair"><pre><span># 生成一次性验证码</span>
+        <div class="command-panel hidden" id="use"><pre><span># 拉取全部已同步域名</span>
+        <div class="command-panel hidden" id="revoke"><pre><span># 撤销当前配对下的所有浏览器</span>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner"><div class="brand"><span class="brand-mark">CS</span><span>CookieSync</span></div><p>登录状态应该流动，但不应该暴露。</p><a href="https://github.com/mbcc2006/cookie-sync">Source on GitHub ↗</a></div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
