@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { defaultStateDirectory } from "./platform.js";
 
 export function stateDirectory() {
-  return process.env.COOKIE_SYNC_HOME || path.join(process.env.HOME || ".", ".local", "share", "cookie-sync");
+  return process.env.COOKIE_SYNC_HOME || defaultStateDirectory();
 }
 
 export function ensureStateDirectory() {
