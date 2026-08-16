@@ -34,6 +34,10 @@ function tokenHash(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+function maskedPairCode(code) {
+  return code.length > 9 ? `${code.slice(0, 4)}...${code.slice(-4)}` : code;
+}
+
 function browserMetadata(value = {}) {
   const text = (input, limit = 500) => typeof input === "string" ? input.slice(0, limit) : "";
   return {
@@ -316,6 +320,14 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       device.accessPolicy = input.accessPolicy;
       store.save();
       return send(response, 200, { accessPolicy: device.accessPolicy }, origin);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/device/status") {
+      const deviceId = url.searchParams.get("deviceId");
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const device = store.devices.get(deviceId);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
+      return send(response, 200, { pairCode: maskedPairCode(device.code) }, origin);
     }
 
     if (request.method === "DELETE" && url.pathname.startsWith("/v1/devices/") && url.pathname.slice("/v1/devices/".length).indexOf("/") === -1) {

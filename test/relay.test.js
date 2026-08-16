@@ -132,6 +132,34 @@ test("lets a device revoke its own authorization but not with another device's t
   assert.equal(policyAfterRevoke.response.status, 401);
 });
 
+test("returns a masked pair code only to its authorized device", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-device-status-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ publicKey: generateKeyPair().publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: pair.value.code })
+  });
+
+  const authorized = await json(url, `/v1/device/status?deviceId=${encodeURIComponent(device.value.deviceId)}`, {
+    headers: { authorization: `Bearer ${device.value.uploadToken}` }
+  });
+  assert.equal(authorized.response.status, 200);
+  assert.equal(authorized.value.pairCode, `${pair.value.code.slice(0, 4)}...${pair.value.code.slice(-4)}`);
+  assert.notEqual(authorized.value.pairCode, pair.value.code);
+
+  const unauthorized = await json(url, `/v1/device/status?deviceId=${encodeURIComponent(device.value.deviceId)}`, {
+    headers: { authorization: "Bearer wrong-token" }
+  });
+  assert.equal(unauthorized.response.status, 401);
+});
+
 test("permits configured extension origins and rejects other CORS preflights", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   const previous = process.env.COOKIE_SYNC_ALLOWED_ORIGINS;

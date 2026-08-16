@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const status = (message) => { $("status").textContent = message; };
+const maskPairCode = (code) => code.length > 9 ? `${code.slice(0, 4)}...${code.slice(-4)}` : code;
 
 let lang = "en";
 const t = (key, params) => self.CookieSyncI18n.t(lang, key, params);
@@ -51,11 +52,12 @@ async function connect() {
   });
   const device = await response.json();
   if (!response.ok) throw new Error(device.error || t("status.authorizeFailed"));
-  await chrome.storage.local.set({ relay, deviceId: device.deviceId, uploadToken: device.uploadToken, publicKey: device.publicKey });
+  const pairedCode = maskPairCode(code);
+  await chrome.storage.local.set({ relay, deviceId: device.deviceId, uploadToken: device.uploadToken, publicKey: device.publicKey, pairedCode });
   await chrome.storage.local.remove("pendingPair");
   await setPolicy();
   await chrome.runtime.sendMessage({ type: "sync-all" });
-  showAuthorized();
+  showAuthorized(pairedCode);
   status(t("status.authorized"));
   loadAudit().catch((error) => status(t("status.errorPrefix", { message: error.message })));
 }
@@ -101,7 +103,7 @@ async function revoke() {
     const response = await fetch(`${relay}/v1/devices/${deviceId}`, { method: "DELETE", headers: { authorization: `Bearer ${uploadToken}` } });
     if (!response.ok && response.status !== 204) throw new Error((await response.json().catch(() => ({}))).error || t("status.revokeFailed"));
   }
-  await chrome.storage.local.remove(["deviceId", "uploadToken", "publicKey", "accessPolicy", "pendingPair"]);
+  await chrome.storage.local.remove(["deviceId", "uploadToken", "publicKey", "accessPolicy", "pendingPair", "pairedCode"]);
   await chrome.runtime.sendMessage({ type: "revoked" }).catch(() => {});
   showUnauthorized();
   status(t("status.revoked"));
@@ -118,9 +120,10 @@ function showUnauthorized() {
   $("audit-section").hidden = true;
 }
 
-function showAuthorized() {
-  $("pair-code-label").hidden = true;
+function showAuthorized(pairedCode) {
+  $("pair-code-label").hidden = !pairedCode;
   $("code").disabled = true;
+  $("code").value = pairedCode || "";
   const button = $("sync");
   button.dataset.i18n = "button.sync.now";
   button.textContent = t("button.sync.now");
@@ -133,10 +136,20 @@ function showAuthorized() {
   $("lang").value = lang;
   applyTranslations();
 
-  const saved = await chrome.storage.local.get(["relay", "deviceId", "accessPolicy", "pendingPair"]);
+  const saved = await chrome.storage.local.get(["relay", "deviceId", "uploadToken", "accessPolicy", "pendingPair", "pairedCode"]);
   $("relay").value = saved.relay || "https://relay.ivjn.us";
   if (saved.deviceId) {
-    showAuthorized();
+    let pairedCode = saved.pairedCode;
+    if (!pairedCode) {
+      try {
+        const response = await fetch(`${$("relay").value}/v1/device/status?deviceId=${encodeURIComponent(saved.deviceId)}`, { headers: { authorization: `Bearer ${saved.uploadToken}` } });
+        if (response.ok) {
+          pairedCode = (await response.json()).pairCode;
+          await chrome.storage.local.set({ pairedCode });
+        }
+      } catch {}
+    }
+    showAuthorized(pairedCode);
     status(t("status.authorizedExisting"));
     loadAudit().catch((error) => status(t("status.errorPrefix", { message: error.message })));
   } else {
