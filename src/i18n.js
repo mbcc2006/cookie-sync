@@ -363,11 +363,41 @@ const TRANSLATIONS = {
     ja: "{url} 向けにヘッドレスブラウザを起動",
     ko: "{url}용 헤드리스 브라우저 실행"
   },
+  "reason.playwright": {
+    en: "Export Cookie snapshot for Playwright for {domain}",
+    zh: "为 Playwright 导出 {domain} 的 Cookie 快照",
+    ja: "Playwright 向けに {domain} の Cookie スナップショットをエクスポート",
+    ko: "Playwright용 {domain} 쿠키 스냅샷 내보내기"
+  },
+  "info.playwrightSaved": {
+    en: "Saved {count} cookies to Playwright storage state {file}.",
+    zh: "已将 {count} 个 Cookie 保存到 Playwright storage state：{file}。",
+    ja: "Cookie {count} 件を Playwright storage state {file} に保存しました。",
+    ko: "쿠키 {count}개를 Playwright storage state {file}에 저장했습니다."
+  },
+  "reason.cookies": {
+    en: "Export Cookie snapshot for {domain}",
+    zh: "导出 {domain} 的 Cookie 快照",
+    ja: "{domain} の Cookie スナップショットをエクスポート",
+    ko: "{domain} 쿠키 스냅샷 내보내기"
+  },
+  "error.cookieFormat": {
+    en: "Cookie format must be json or txt.",
+    zh: "Cookie 格式必须为 json 或 txt。",
+    ja: "Cookie 形式は json または txt で指定してください。",
+    ko: "쿠키 형식은 json 또는 txt여야 합니다."
+  },
+  "info.cookiesSaved": {
+    en: "Saved {count} cookies as {format} to {file}.",
+    zh: "已将 {count} 个 Cookie 以 {format} 格式保存到 {file}。",
+    ja: "Cookie {count} 件を {format} 形式で {file} に保存しました。",
+    ko: "쿠키 {count}개를 {format} 형식으로 {file}에 저장했습니다."
+  },
   "error.usage": {
-    en: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    zh: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    ja: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
-    ko: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>"
+    en: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    zh: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    ja: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>",
+    ko: "Usage: cookie-sync <pair|console <domain> [--reason text]|browsers|browser set <ID> [--alias name] [--note text]|pull <domain> [--browser ID] [--reason text]|pull-all [--browser ID] [--reason text]|browse <url> [--browser ID|console] [--reason text]|playwright <domain> [--out file] [--browser ID|console] [--reason text]|cookies <domain> [--format json|txt] [--out file] [--browser ID|console] [--reason text]|revoke|export [--out file]|import <file>|lang [en|zh|ja|ko]|status>"
   }
 };
 

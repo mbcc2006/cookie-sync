@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 import { chromium } from "playwright-core";
 import WebSocket from "ws";
+import { toNetscapeCookies } from "./cookies.js";
 import { decryptFrom, generateKeyPair } from "./crypto.js";
 import { resolveLang, setLang, t } from "./i18n.js";
 import { chromeLaunchArgs, findChrome } from "./platform.js";
+import { toPlaywrightCookie, toPlaywrightStorageState } from "./playwright.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
@@ -118,25 +121,6 @@ async function requestBrowserAccess(browser, domains, reason) {
   }
   socket?.close();
   throw new Error(t("error.approvalTimeout"));
-}
-
-function toPlaywrightCookie(cookie) {
-  const sameSite = {
-    no_restriction: "None",
-    lax: "Lax",
-    strict: "Strict",
-    unspecified: undefined
-  }[cookie.sameSite];
-  return {
-    name: cookie.name,
-    value: cookie.value,
-    domain: cookie.domain,
-    path: cookie.path || "/",
-    expires: cookie.expirationDate || -1,
-    httpOnly: Boolean(cookie.httpOnly),
-    secure: Boolean(cookie.secure),
-    ...(sameSite ? { sameSite } : {})
-  };
 }
 
 async function createPair() {
@@ -331,6 +315,37 @@ async function browse(url, browserSelector, reason) {
   }
 }
 
+async function playwright(domain, outFile, browserSelector, reason) {
+  domain = normalizeDomain(domain);
+  const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
+  if (browserDevice) await pull(domain, browserDevice.id, reason || t("reason.playwright", { domain }));
+  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
+  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
+  const file = outFile || "playwright-state.json";
+  fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(toPlaywrightStorageState(snapshot), null, 2)}\n`, { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+  console.log(t("info.playwrightSaved", { count: snapshot.cookies.length, file }));
+}
+
+async function exportCookies(domain, format, outFile, browserSelector, reason) {
+  domain = normalizeDomain(domain);
+  const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
+  if (browserDevice) await pull(domain, browserDevice.id, reason || t("reason.cookies", { domain }));
+  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
+  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
+  format = format || "json";
+  if (!new Set(["json", "txt"]).has(format)) throw new Error(t("error.cookieFormat"));
+  const output = format === "txt"
+    ? toNetscapeCookies(snapshot.cookies)
+    : `${JSON.stringify(snapshot.cookies, null, 2)}\n`;
+  if (!outFile) return process.stdout.write(output);
+  fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true });
+  fs.writeFileSync(outFile, output, { mode: 0o600 });
+  fs.chmodSync(outFile, 0o600);
+  console.log(t("info.cookiesSaved", { count: snapshot.cookies.length, format, file: outFile }));
+}
+
 function status() {
   console.log(t("info.relay", { relay }));
   console.log(t("info.stateDirectory", { dir: stateDirectory() }));
@@ -368,6 +383,8 @@ try {
   else if (command === "pull-all") await pullAll(optionValue("--browser"), optionValue("--reason"));
   else if (command === "wait") await waitForSnapshot(value, optionValue("--timeout"), optionValue("--browser"), optionValue("--reason"));
   else if (command === "browse") await browse(value, optionValue("--browser"), optionValue("--reason"));
+  else if (command === "playwright") await playwright(value, optionValue("--out"), optionValue("--browser"), optionValue("--reason"));
+  else if (command === "cookies") await exportCookies(value, optionValue("--format"), optionValue("--out"), optionValue("--browser"), optionValue("--reason"));
   else if (command === "revoke") await revoke();
   else if (command === "export") await exportPair(optionValue("--out"));
   else if (command === "import") await importPair(value);

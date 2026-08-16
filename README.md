@@ -53,6 +53,33 @@ Fetch every domain currently waiting on the relay:
 cookie-sync pull-all
 ```
 
+Export cookies as a Playwright `storageState` file and use it in a test or config:
+
+```bash
+cookie-sync playwright github.com --out playwright/.auth/github.json
+npx playwright test --project chromium
+```
+
+```js
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: { storageState: "playwright/.auth/github.json" }
+});
+```
+
+The output defaults to `playwright-state.json`. It contains authentication credentials and is written with owner-only permissions; exclude it from version control.
+
+Export the raw Cookie array as JSON or a Netscape-compatible `cookies.txt` file for curl, wget, and other tools:
+
+```bash
+cookie-sync cookies github.com --format json --out cookies.json
+cookie-sync cookies github.com --format txt --out cookies.txt
+curl --cookie cookies.txt https://github.com/
+```
+
+Omit `--out` to print the result to stdout. The format defaults to `json`; `--browser` and `--reason` work the same way as with `pull`.
+
 ## Manage multiple browsers
 
 Each authorized Chrome profile is an independent browser. Snapshots from different browsers do not overwrite one another, even for the same domain.
