@@ -158,7 +158,7 @@ function consoleImportScript() {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(snapshot))));
     const raw = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
-    const prefix = Uint8Array.from([48,42,48,5,6,3,43,110,110,3,33,0]); const spki = new Uint8Array(44); spki.set(prefix); spki.set(raw, 12);
+    const prefix = Uint8Array.from([48,42,48,5,6,3,43,101,110,3,33,0]); const spki = new Uint8Array(44); spki.set(prefix); spki.set(raw, 12);
     const envelope = { ephemeralPublicKey: "-----BEGIN PUBLIC KEY-----\\n" + b64(spki) + "\\n-----END PUBLIC KEY-----", iv: b64(iv), ciphertext: b64(encrypted.slice(0,-16)), tag: b64(encrypted.slice(-16)) };
     const response = await fetch(config.relay + "/v1/imports/" + config.id, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + config.uploadToken }, body: JSON.stringify({ envelope }) });
     if (!response.ok) throw new Error((await response.json()).error || "CookieSync upload failed");

@@ -34,7 +34,7 @@ async function encrypt(publicKeyPem, snapshot) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(snapshot))));
   const rawPublicKey = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
-  const prefix = Uint8Array.from([48, 42, 48, 5, 6, 3, 43, 110, 110, 3, 33, 0]);
+  const prefix = Uint8Array.from([48, 42, 48, 5, 6, 3, 43, 101, 110, 3, 33, 0]);
   const spki = new Uint8Array(prefix.length + rawPublicKey.length);
   spki.set(prefix); spki.set(rawPublicKey, prefix.length);
   return { ephemeralPublicKey: `-----BEGIN PUBLIC KEY-----\n${base64(spki)}\n-----END PUBLIC KEY-----`, iv: base64(iv), ciphertext: base64(encrypted.slice(0, -16)), tag: base64(encrypted.slice(-16)) };
