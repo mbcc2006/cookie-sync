@@ -6,7 +6,7 @@
   <title>CookieSync</title>
   <style>
     body { font: 14px sans-serif; margin: 16px; min-width: 300px; }
-    label, input, button { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
+    label, input, select, button { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
     button { padding: 8px; }
     #status { white-space: pre-wrap; }
   </style>
@@ -15,6 +15,12 @@
   <strong>CookieSync</strong>
   <label>Relay URL <input id="relay" value="https://relay.ivjn.us"></label>
   <label>Pair code <input id="code" placeholder="ABC123..."></label>
+  <label>CLI 读取 Cookie
+    <select id="policy">
+      <option value="notify">默认允许，但通知提示</option>
+      <option value="confirm">每次都需要确认</option>
+    </select>
+  </label>
   <button id="sync">Authorize and sync all permitted domains</button>
   <p id="status"></p>
   <script src="popup.js"></script>

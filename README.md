@@ -27,6 +27,8 @@ On the CLI machine:
 cookie-sync pair
 ```
 
+The command also prints `https://relay.ivjn.us/?pair=...`. Open that URL in Chrome to validate the short-lived code, prefill the installed CookieSync extension, and attempt to open its popup. If Chrome blocks automatic popup opening, click the CookieSync toolbar icon; the pair code remains prefilled.
+
 Load `extension/` as an unpacked extension in `chrome://extensions`, enter the relay URL and pair code, then authorize it once. Chrome asks for cookie access to all sites. The extension receives a dedicated upload-only token and continuously syncs every cookie domain on changes, browser startup, and a 15-minute fallback interval. The relay stores only the latest encrypted snapshot for each domain.
 
 Fetch the encrypted snapshot on the CLI machine:
@@ -60,6 +62,13 @@ cookie-sync browse https://github.com/ --browser "Work laptop"
 ```
 
 The extension reports User-Agent Client Hints when available, including browser version, operating system, platform, architecture, bitness, and language. It falls back to `navigator.userAgent` and `navigator.platform` on older Chromium versions. The `browse` command applies the selected source browser's UA and language to its isolated headless context.
+
+Each browser has an independent CLI access policy:
+
+- `notify` (default): retrieval proceeds immediately, but the extension displays a system notification containing the requested domains.
+- `confirm`: retrieval remains blocked until the extension user explicitly clicks Allow. Denied and expired requests never expose the encrypted snapshot.
+
+Every retrieval creates a two-minute, browser- and domain-scoped access request. An approved request can be consumed only once. Change the policy from the extension popup at any time.
 
 To wait for a person to press the extension's sync button before continuing an automation job:
 

@@ -24,7 +24,7 @@
   <main id="top">
     <section class="hero wrap">
       <div class="hero-copy reveal">
-        <p class="eyebrow"><span></span> Remote session bridge / v0.2</p>
+        <p class="eyebrow"><span></span> Remote session bridge / v0.5</p>
         <h1>让无头浏览器<br><em>保持登录。</em></h1>
         <p class="lead">浏览器只需授权一次，CookieSync 就会将所有允许域名的 Cookie 端到端加密，同步给另一台设备上的 CLI 和无头 Chrome。</p>
         <div class="hero-actions">
@@ -101,6 +101,22 @@
       </div>
     </section>
 
+    <section id="features" class="section wrap feature-section">
+      <div class="section-title reveal">
+        <p class="eyebrow"><span></span> Capabilities</p>
+        <h2>不只是复制 Cookie</h2>
+        <p>从浏览器身份管理到实时通知，CookieSync 为持续运行的远程自动化提供完整链路。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card reveal"><span>01 / IDENTITIES</span><h3>多浏览器管理</h3><p>每个 Chrome 配置文件独立保存。CLI 可查看浏览器 ID、UA、系统、架构和最后在线时间，并设置别名与备注。</p><code>cookie-sync browsers</code></article>
+        <article class="feature-card reveal delay-1"><span>02 / REALTIME</span><h3>WebSocket 实时通知</h3><p>Cookie 更新后立即唤醒正在等待的 CLI；连接中断时自动回退轮询。Web Push 只发送无敏感内容的更新元数据。</p><code>cookie-sync wait github.com</code></article>
+        <article class="feature-card reveal"><span>03 / FALLBACK</span><h3>一次性 Console 导入</h3><p>无法安装扩展时，创建五分钟单次会话，从页面 Console 加密导入当前可见 Cookie。</p><code>cookie-sync console github.com</code></article>
+        <article class="feature-card reveal delay-1"><span>04 / DEFENSE</span><h3>限流与最小权限</h3><p>配对、设备认领和导入使用独立限流；上传令牌不能读取数据，中继仅保存令牌哈希与加密快照。</p><code>429 + Retry-After</code></article>
+        <article class="feature-card reveal"><span>05 / CONSENT</span><h3>读取通知与确认</h3><p>默认允许 CLI 读取但发送系统通知；也可切换为每次读取都必须在 Chrome 中明确允许。批准请求仅可使用一次。</p><code>notify / confirm</code></article>
+        <article class="feature-card reveal delay-1"><span>06 / SCOPE</span><h3>域名级访问范围</h3><p>读取请求绑定浏览器和域名，最长两分钟。拒绝、过期或已消费的请求无法再次获得加密快照。</p><code>403 until approved</code></article>
+      </div>
+    </section>
+
     <section id="quickstart" class="section wrap quickstart">
       <div class="section-title reveal">
         <p class="eyebrow"><span></span> Quick start</p>
@@ -108,16 +124,55 @@
       </div>
       <div class="commands reveal delay-1">
         <div class="tabs" role="tablist"><button class="active" data-tab="install">安装</button><button data-tab="pair">配对</button><button data-tab="use">使用</button><button data-tab="console">Console</button><button data-tab="revoke">撤销</button></div>
-        <div class="command-panel" id="install"><pre><span># Node.js 20+</span>
-        <div class="command-panel hidden" id="pair"><pre><span># 生成一次性验证码</span>
-        <div class="command-panel hidden" id="use"><pre><span># 拉取全部已同步域名</span>
-        <div class="command-panel hidden" id="console"><pre><span># 创建 5 分钟一次性导入并打印 Console 脚本</span>
+        <div class="command-panel" id="install">
+          <pre><span># 需要 Node.js 20+</span>
+npm install -g github:mbcc2006/cookie-sync
+
+<span># 检查默认 relay 和数据目录</span>
+cookie-sync status</pre>
+          <button class="mini-copy" data-copy="npm install -g github:mbcc2006/cookie-sync">复制</button>
+        </div>
+        <div class="command-panel hidden" id="pair">
+          <pre><span># 创建十分钟有效的配对码</span>
+cookie-sync pair
+
+<span># 在 Chrome 扩展中输入配对码并授权一次</span>
+<span># 后续 Cookie 变化会自动加密同步</span></pre>
+          <button class="mini-copy" data-copy="cookie-sync pair">复制</button>
+        </div>
+        <div class="command-panel hidden" id="use">
+          <pre><span># 查看浏览器身份、UA 和系统信息</span>
+cookie-sync browsers
+
+<span># 为浏览器设置别名</span>
+cookie-sync browser set 93cd5c4f --alias "Work laptop"
+
+<span># 拉取并使用指定浏览器的 Cookie</span>
+cookie-sync pull-all --browser "Work laptop"
+cookie-sync browse https://github.com/ --browser "Work laptop"</pre>
+          <button class="mini-copy" data-copy="cookie-sync browsers">复制</button>
+        </div>
+        <div class="command-panel hidden" id="console">
+          <pre><span># 创建五分钟一次性导入并打印 Console 脚本</span>
 cookie-sync console github.com
 
 <span># 仅支持页面可见的非 HttpOnly Cookie</span>
-cookie-sync browse https://github.com/ --browser console</pre><button class="mini-copy" data-copy="cookie-sync console github.com">复制</button></div>
-        <div class="command-panel hidden" id="revoke"><pre><span># 撤销当前配对下的所有浏览器</span>
+cookie-sync browse https://github.com/ --browser console</pre>
+          <button class="mini-copy" data-copy="cookie-sync console github.com">复制</button>
+        </div>
+        <div class="command-panel hidden" id="revoke">
+          <pre><span># 撤销当前配对下的所有浏览器和实时订阅</span>
+cookie-sync revoke
+
+<span># 浏览器丢失或授权泄漏时立即执行</span></pre>
+          <button class="mini-copy" data-copy="cookie-sync revoke">复制</button>
+        </div>
       </div>
+    </section>
+
+    <section class="limitations wrap reveal">
+      <div><span>Important</span><h2>Console 模式不是扩展的替代品。</h2></div>
+      <p>页面 JavaScript 无法读取 <code>HttpOnly</code> Cookie，也无法恢复完整 Path、SameSite 和分区属性。需要稳定复用登录状态时，请使用 Chrome 扩展；Console 模式仅用于临时兼容。</p>
     </section>
   </main>
 

@@ -54,7 +54,12 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
   assert.equal(tokenUpload.response.status, 201);
   assert.equal(upload.response.status, 401);
 
-  const listed = await json(url, `/v1/messages?code=${pair.value.code}`, { headers: { authorization: `Bearer ${pair.value.readToken}` } });
+  const readHeaders = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const access = await json(url, "/v1/access-requests", {
+    method: "POST", headers: readHeaders, body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, domains: ["*"] })
+  });
+  assert.equal(access.value.status, "approved");
+  const listed = await json(url, `/v1/messages?code=${pair.value.code}&deviceId=${device.value.deviceId}&accessRequestId=${access.value.id}`, { headers: readHeaders });
   assert.equal(listed.response.status, 200);
   assert.deepEqual(listed.value.messages.map((message) => message.domain), ["relay.ivjn.us"]);
 
@@ -73,14 +78,17 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
   assert.equal(blocked.response.status, 401);
 
   const headers = { authorization: `Bearer ${pair.value.readToken}` };
-  const fetched = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`, { headers });
+  const domainAccess = await json(url, "/v1/access-requests", {
+    method: "POST", headers: readHeaders, body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, domains: ["relay.ivjn.us"] })
+  });
+  const fetched = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us&deviceId=${device.value.deviceId}&accessRequestId=${domainAccess.value.id}`, { headers });
   assert.equal(fetched.response.status, 200);
   assert.equal(fetched.value.id, tokenUpload.value.id);
 
   const removed = await json(url, `/v1/messages/${tokenUpload.value.id}`, { method: "DELETE", headers });
   assert.equal(removed.response.status, 204);
-  const missing = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us`, { headers });
-  assert.equal(missing.response.status, 404);
+  const reused = await json(url, `/v1/messages?code=${pair.value.code}&domain=relay.ivjn.us&deviceId=${device.value.deviceId}&accessRequestId=${domainAccess.value.id}`, { headers });
+  assert.equal(reused.response.status, 403);
 });
 
 test("permits configured extension origins and rejects other CORS preflights", async (context) => {
@@ -176,9 +184,47 @@ test("isolates same-domain snapshots by browser and emits websocket updates", as
   await upload(second, "second");
   assert.equal((await update).browserId, first.value.deviceId);
   const headers = { authorization: `Bearer ${pair.value.readToken}` };
-  const listed = await json(url, `/v1/messages?code=${pair.value.code}`, { headers });
-  assert.equal(listed.value.messages.length, 2);
-  assert.deepEqual(new Set(listed.value.messages.map((message) => message.deviceId)), new Set([first.value.deviceId, second.value.deviceId]));
+  for (const device of [first, second]) {
+    const access = await json(url, "/v1/access-requests", {
+      method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, domains: ["*"] })
+    });
+    const listed = await json(url, `/v1/messages?code=${pair.value.code}&deviceId=${device.value.deviceId}&accessRequestId=${access.value.id}`, { headers });
+    assert.equal(listed.value.messages.length, 1);
+    assert.equal(listed.value.messages[0].deviceId, device.value.deviceId);
+  }
+});
+
+test("requires browser approval when confirmation policy is enabled", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  const deviceHeaders = { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` };
+  await json(url, `/v1/devices/${device.value.deviceId}/policy`, {
+    method: "POST", headers: deviceHeaders, body: JSON.stringify({ accessPolicy: "confirm" })
+  });
+  await json(url, "/v1/messages", {
+    method: "POST", headers: deviceHeaders,
+    body: JSON.stringify({ deviceId: device.value.deviceId, domain: "relay.ivjn.us", envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] }) })
+  });
+  const cliHeaders = { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` };
+  const access = await json(url, "/v1/access-requests", {
+    method: "POST", headers: cliHeaders, body: JSON.stringify({ code: pair.value.code, deviceId: device.value.deviceId, domains: ["relay.ivjn.us"] })
+  });
+  assert.equal(access.value.status, "pending");
+  const messagePath = `/v1/messages?code=${pair.value.code}&deviceId=${device.value.deviceId}&domain=relay.ivjn.us&accessRequestId=${access.value.id}`;
+  assert.equal((await json(url, messagePath, { headers: cliHeaders })).response.status, 403);
+  await json(url, `/v1/device/access-requests/${access.value.id}`, {
+    method: "POST", headers: deviceHeaders, body: JSON.stringify({ decision: "approved" })
+  });
+  assert.equal((await json(url, messagePath, { headers: cliHeaders })).response.status, 200);
 });
 
 test("accepts and consumes an encrypted console import exactly once", async (context) => {
@@ -204,4 +250,23 @@ test("accepts and consumes an encrypted console import exactly once", async (con
   const importPath = `/v1/imports/${session.value.id}?code=${pair.value.code}`;
   assert.equal((await json(url, importPath, { headers: readHeaders })).response.status, 200);
   assert.equal((await json(url, importPath, { headers: readHeaders })).response.status, 401);
+});
+
+test("serves a no-store pairing page only for valid pair codes", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const valid = await fetch(`${url}/?pair=${pair.value.code}`);
+  assert.equal(valid.status, 200);
+  assert.equal(valid.headers.get("cache-control"), "no-store");
+  assert.match(valid.headers.get("content-security-policy"), /default-src 'none'/);
+  assert.match(await valid.text(), new RegExp(pair.value.code));
+  assert.equal((await fetch(`${url}/?pair=${pair.value.code}`, { method: "HEAD" })).status, 200);
+  const invalid = await fetch(`${url}/?pair=INVALID`);
+  assert.match(await invalid.text(), /无效或已过期/);
 });

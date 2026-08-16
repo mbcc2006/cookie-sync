@@ -9,6 +9,7 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const PAIR_TTL_MS = 10 * 60 * 1000;
 const MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const IMPORT_TTL_MS = 5 * 60 * 1000;
+const ACCESS_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_RATE_LIMITS = {
   api: { max: 120, windowMs: 60_000 },
   pairs: { max: 10, windowMs: 60_000 },
@@ -66,6 +67,7 @@ function createStore(directory) {
   let devices = new Map();
   let messages = new Map();
   let imports = new Map();
+  let accessRequests = new Map();
   let pushSubscriptions = [];
   try {
     const values = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -73,16 +75,17 @@ function createStore(directory) {
     devices = new Map((values.devices || []).map((device) => [device.id, device]));
     messages = new Map((values.messages || []).map((message) => [message.id, message]));
     imports = new Map((values.imports || []).map((item) => [item.id, item]));
+    accessRequests = new Map((values.accessRequests || []).map((item) => [item.id, item]));
     pushSubscriptions = values.pushSubscriptions || [];
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   function save() {
     const temporary = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()], imports: [...imports.values()], pushSubscriptions })}\n`, { mode: 0o600 });
+    fs.writeFileSync(temporary, `${JSON.stringify({ pairs: [...pairs.values()], devices: [...devices.values()], messages: [...messages.values()], imports: [...imports.values()], accessRequests: [...accessRequests.values()], pushSubscriptions })}\n`, { mode: 0o600 });
     fs.renameSync(temporary, file);
   }
-  return { pairs, devices, messages, imports, pushSubscriptions, save };
+  return { pairs, devices, messages, imports, accessRequests, pushSubscriptions, save };
 }
 
 function cleanup(pairs, store) {
@@ -97,6 +100,12 @@ function cleanup(pairs, store) {
   for (const [id, item] of store.imports) {
     if (item.expiresAt <= now) {
       store.imports.delete(id);
+      changed = true;
+    }
+  }
+  for (const [id, item] of store.accessRequests) {
+    if (item.expiresAt <= now) {
+      store.accessRequests.delete(id);
       changed = true;
     }
   }
@@ -144,6 +153,16 @@ function consoleImportScript() {
 })();`;
 }
 
+function pairingPage(pair) {
+  const safeCode = pair ? JSON.stringify(pair.code) : "null";
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CookieSync Pair</title><style>
+  :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f0e6;color:#13251d;font-family:ui-sans-serif,system-ui,sans-serif}.card{width:min(560px,calc(100% - 32px));border:1px solid #13251d;background:#fbf8ef;padding:38px;box-shadow:10px 10px 0 #c9ff45}.mark{display:inline-grid;place-items:center;width:38px;height:38px;background:#13251d;color:#c9ff45;font:700 12px ui-monospace,monospace}h1{font-size:38px;letter-spacing:-.05em;margin:24px 0 10px}p{line-height:1.7;color:#52645a}.code{font:600 24px ui-monospace,monospace;letter-spacing:.08em;border:1px dashed #13251d;padding:16px;margin:24px 0;background:white;overflow-wrap:anywhere}button{width:100%;border:1px solid #13251d;background:#13251d;color:white;padding:15px;font-weight:700;cursor:pointer;box-shadow:5px 5px 0 #c9ff45}.status{font-size:13px;min-height:24px;margin-top:18px}.bad{color:#a43b1c}@media(max-width:520px){.card{padding:25px}h1{font-size:31px}.code{font-size:18px}}</style></head><body><main class="card"><span class="mark">CS</span><h1>连接这台浏览器</h1>${pair ? `<p>配对码将在 ${new Date(pair.expiresAt).toISOString()} 过期。点击后，已安装的 CookieSync 扩展会自动预填。</p><div class="code">${pair.code}</div><button id="open">打开 CookieSync 扩展</button><p class="status" id="status">如果扩展弹窗未自动打开，请点击浏览器工具栏中的 CookieSync 图标。</p>` : `<p class="bad">配对码无效或已过期。请回到 CLI 重新运行 <code>cookie-sync pair</code>。</p>`}</main><script>
+  const pair=${safeCode}; const button=document.getElementById('open');
+  if(button) button.onclick=()=>{document.dispatchEvent(new CustomEvent('cookie-sync-pair',{detail:{pair,relay:location.origin}}));document.getElementById('status').textContent='配对码已发送给扩展。';};
+  if(pair) setTimeout(()=>document.dispatchEvent(new CustomEvent('cookie-sync-pair',{detail:{pair,relay:location.origin}})),300);
+  </script></body></html>`;
+}
+
 async function body(request) {
   const chunks = [];
   let size = 0;
@@ -167,6 +186,7 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
   const allowOrigin = (origin) => origin && (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) ? origin : undefined;
 
   const sockets = new Map();
+  const deviceSockets = new Map();
   const vapidPublicKey = process.env.COOKIE_SYNC_VAPID_PUBLIC_KEY;
   const vapidPrivateKey = process.env.COOKIE_SYNC_VAPID_PRIVATE_KEY;
   if (vapidPublicKey && vapidPrivateKey) webpush.setVapidDetails(process.env.COOKIE_SYNC_VAPID_SUBJECT || "mailto:admin@ivjn.us", vapidPublicKey, vapidPrivateKey);
@@ -178,6 +198,10 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
     for (const item of store.pushSubscriptions.filter((subscription) => subscription.code === code)) {
       webpush.sendNotification(item.subscription, payload, { TTL: 60 }).catch(() => {});
     }
+  };
+  const notifyDevice = (deviceId, event) => {
+    const payload = JSON.stringify(event);
+    for (const socket of deviceSockets.get(deviceId) || []) if (socket.readyState === 1) socket.send(payload);
   };
 
   const server = http.createServer(async (request, response) => {
@@ -195,6 +219,14 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
     }
 
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
+      cleanup(pairs, store);
+      const code = url.searchParams.get("pair");
+      const pair = code && pairs.get(code);
+      const valid = pair && pair.expiresAt > Date.now() ? pair : null;
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", "x-content-type-options": "nosniff" });
+      return response.end(request.method === "HEAD" ? undefined : pairingPage(valid));
+    }
     if (request.method === "GET" && url.pathname === "/console-import.js") {
       response.writeHead(200, { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" });
       return response.end(consoleImportScript());
@@ -243,11 +275,71 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const now = Date.now();
       const device = {
         id: crypto.randomUUID(), code: pair.code, uploadTokenHash: tokenHash(uploadToken), alias: "", note: "",
-        metadata: browserMetadata(input.metadata), createdAt: now, lastSeenAt: now
+        accessPolicy: "notify", metadata: browserMetadata(input.metadata), createdAt: now, lastSeenAt: now
       };
       store.devices.set(device.id, device);
       store.save();
       return send(response, 201, { deviceId: device.id, uploadToken, publicKey: pair.publicKey }, origin);
+    }
+
+    if (request.method === "POST" && url.pathname.startsWith("/v1/devices/") && url.pathname.endsWith("/policy")) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/devices/".length, -"/policy".length));
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const device = store.devices.get(id);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
+      if (!["notify", "confirm"].includes(input.accessPolicy)) return send(response, 400, { error: "Access policy must be notify or confirm." }, origin);
+      device.accessPolicy = input.accessPolicy;
+      store.save();
+      return send(response, 200, { accessPolicy: device.accessPolicy }, origin);
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/access-requests") {
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const pair = pairs.get(input.code);
+      const device = store.devices.get(input.deviceId);
+      if (!pair || !device || device.code !== input.code || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      const domains = Array.isArray(input.domains) ? input.domains.map((domain) => domain === "*" ? "*" : isDomain(domain) ? domain.toLowerCase() : null) : [];
+      if (!domains.length || domains.includes(null)) return send(response, 400, { error: "At least one valid domain is required." }, origin);
+      const now = Date.now();
+      const item = { id: crypto.randomUUID(), code: input.code, deviceId: device.id, domains, status: device.accessPolicy === "confirm" ? "pending" : "approved", mode: device.accessPolicy, createdAt: now, expiresAt: now + ACCESS_TTL_MS };
+      store.accessRequests.set(item.id, item);
+      store.save();
+      notifyDevice(device.id, { type: "access-request", requestId: item.id, domains, mode: item.mode, status: item.status, expiresAt: item.expiresAt });
+      return send(response, 201, item, origin);
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/v1/access-requests/")) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/access-requests/".length));
+      const code = url.searchParams.get("code");
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const pair = pairs.get(code);
+      const item = store.accessRequests.get(id);
+      if (!pair || !item || item.code !== code || !token || !safeEqual(token, pair.readToken)) return send(response, 401, { error: "A valid CLI read token is required." }, origin);
+      return send(response, 200, item, origin);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/device/access-requests") {
+      const deviceId = url.searchParams.get("deviceId");
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const device = store.devices.get(deviceId);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
+      const requests = [...store.accessRequests.values()].filter((item) => item.deviceId === deviceId && item.expiresAt > Date.now());
+      return send(response, 200, { requests }, origin);
+    }
+
+    if (request.method === "POST" && url.pathname.startsWith("/v1/device/access-requests/")) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/device/access-requests/".length));
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+      const item = store.accessRequests.get(id);
+      const device = item && store.devices.get(item.deviceId);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return send(response, 401, { error: "A valid device upload token is required." }, origin);
+      if (item.status !== "pending" || item.expiresAt <= Date.now()) return send(response, 409, { error: "Access request is no longer pending." }, origin);
+      if (!["approved", "denied"].includes(input.decision)) return send(response, 400, { error: "Decision must be approved or denied." }, origin);
+      item.status = input.decision;
+      item.decidedAt = Date.now();
+      store.save();
+      notify(item.code, { type: "access-decision", requestId: item.id, status: item.status });
+      return send(response, 200, item, origin);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/imports") {
@@ -340,17 +432,25 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       const code = url.searchParams.get("code");
       const domain = url.searchParams.get("domain")?.toLowerCase();
       const deviceId = url.searchParams.get("deviceId");
+      const accessRequestId = url.searchParams.get("accessRequestId");
       const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
       const pair = pairs.get(code);
       if (!pair || !token || !safeEqual(token, pair.readToken)) {
         return send(response, 401, { error: "A valid CLI read token is required." }, origin);
       }
+      const access = store.accessRequests.get(accessRequestId);
+      const scopeMatches = access && access.code === code && access.deviceId === deviceId && access.status === "approved" && !access.usedAt && access.expiresAt > Date.now() && (access.domains.includes("*") || (domain && access.domains.includes(domain)));
+      if (!scopeMatches) return send(response, 403, { error: "An approved browser access request is required." }, origin);
       if (!domain) {
         const messages = [...store.messages.values()].filter((item) => item.code === code && (!deviceId || item.deviceId === deviceId));
+        access.usedAt = Date.now();
+        store.save();
         return send(response, 200, { messages }, origin);
       }
       const message = [...store.messages.values()].reverse().find((item) => item.code === code && item.domain === domain && (!deviceId || item.deviceId === deviceId));
       if (!message) return send(response, 404, { error: "No message found." }, origin);
+      access.usedAt = Date.now();
+      store.save();
       return send(response, 200, message, origin);
     }
 
@@ -375,6 +475,7 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
       for (const [id, device] of store.devices) if (device.code === code) store.devices.delete(id);
       for (const [id, message] of store.messages) if (message.code === code) store.messages.delete(id);
       for (const [id, item] of store.imports) if (item.code === code) store.imports.delete(id);
+      for (const [id, item] of store.accessRequests) if (item.code === code) store.accessRequests.delete(id);
       const subscriptions = store.pushSubscriptions.filter((subscription) => subscription.code !== code);
       store.pushSubscriptions.splice(0, store.pushSubscriptions.length, ...subscriptions);
       pairs.delete(code);
@@ -402,6 +503,18 @@ export function createRelay({ dataDirectory = process.env.COOKIE_SYNC_RELAY_DATA
   const websocket = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname === "/v1/device/ws") {
+      const deviceId = url.searchParams.get("deviceId");
+      const token = url.searchParams.get("token");
+      const device = store.devices.get(deviceId);
+      if (!device || !token || !safeEqual(tokenHash(token), device.uploadTokenHash)) return socket.destroy();
+      return websocket.handleUpgrade(request, socket, head, (client) => {
+        if (!deviceSockets.has(deviceId)) deviceSockets.set(deviceId, new Set());
+        deviceSockets.get(deviceId).add(client);
+        client.on("close", () => deviceSockets.get(deviceId)?.delete(client));
+        client.send(JSON.stringify({ type: "connected" }));
+      });
+    }
     if (url.pathname !== "/v1/ws") return socket.destroy();
     const code = url.searchParams.get("code");
     const token = url.searchParams.get("token");

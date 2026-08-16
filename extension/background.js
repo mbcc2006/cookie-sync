@@ -1,4 +1,5 @@
 const syncTimers = new Map();
+let deviceSocket;
 
 async function browserMetadata() {
   const data = navigator.userAgentData;
@@ -60,11 +61,63 @@ async function syncAll() {
   await Promise.all([...domains].map((domain) => syncDomain(domain)));
 }
 
+async function decide(requestId, decision) {
+  const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
+  const response = await fetch(`${relay}/v1/device/access-requests/${requestId}`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ decision })
+  });
+  if (!response.ok) throw new Error((await response.json()).error || "Decision failed.");
+}
+
+async function showAccessRequest(request) {
+  const key = `access-notified-${request.id}`;
+  if ((await chrome.storage.local.get(key))[key]) return;
+  await chrome.storage.local.set({ [key]: true });
+  const confirm = request.mode === "confirm" && request.status === "pending";
+  await chrome.notifications.create(`access:${request.id}`, {
+    type: "basic", iconUrl: "icon.svg", title: confirm ? "CookieSync 请求读取 Cookie" : "CookieSync 已读取 Cookie",
+    message: `域名：${request.domains.join(", ")}`,
+    priority: 2,
+    ...(confirm ? { requireInteraction: true, buttons: [{ title: "允许" }, { title: "拒绝" }] } : {})
+  });
+}
+
+async function pollAccessRequests() {
+  const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
+  if (!relay || !deviceId || !uploadToken) return;
+  const response = await fetch(`${relay}/v1/device/access-requests?deviceId=${encodeURIComponent(deviceId)}`, { headers: { authorization: `Bearer ${uploadToken}` } });
+  if (!response.ok) return;
+  for (const request of (await response.json()).requests) await showAccessRequest(request);
+}
+
+async function connectDeviceSocket() {
+  const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
+  if (!relay || !deviceId || !uploadToken) return;
+  const url = new URL("/v1/device/ws", relay);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("deviceId", deviceId); url.searchParams.set("token", uploadToken);
+  deviceSocket?.close();
+  deviceSocket = new WebSocket(url);
+  deviceSocket.onmessage = (event) => { const message = JSON.parse(event.data); if (message.type === "access-request") showAccessRequest({ id: message.requestId, ...message }); };
+}
+
 chrome.cookies.onChanged.addListener(({ cookie }) => schedule(cookie.domain.replace(/^\./, "")));
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "sync-all") syncAll().then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: error.message }));
+  if (message.type === "sync-all") Promise.all([syncAll(), connectDeviceSocket(), pollAccessRequests()]).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: error.message }));
+  if (message.type === "open-pair") chrome.action.openPopup().catch(() => {});
   return true;
 });
 chrome.runtime.onStartup.addListener(syncAll);
-chrome.runtime.onInstalled.addListener(() => chrome.alarms.create("cookie-sync", { periodInMinutes: 15 }));
-chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === "cookie-sync") syncAll(); });
+chrome.runtime.onStartup.addListener(() => { connectDeviceSocket(); pollAccessRequests(); });
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create("cookie-sync", { periodInMinutes: 15 });
+  chrome.alarms.create("cookie-access", { periodInMinutes: 1 });
+});
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "cookie-sync") syncAll();
+  if (alarm.name === "cookie-access") { pollAccessRequests(); connectDeviceSocket(); }
+});
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (!notificationId.startsWith("access:")) return;
+  decide(notificationId.slice(7), buttonIndex === 0 ? "approved" : "denied").finally(() => chrome.notifications.clear(notificationId));
+});

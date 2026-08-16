@@ -76,6 +76,44 @@ async function setBrowserProfile(selector, alias, note) {
   console.log(`Updated browser ${device.id.slice(0, 8)}.`);
 }
 
+async function requestBrowserAccess(browser, domains) {
+  const { code, readToken } = pairCredentials();
+  const access = await request("/v1/access-requests", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${readToken}` },
+    body: JSON.stringify({ code, deviceId: browser.id, domains })
+  });
+  if (access.status === "approved") return access.id;
+  console.log(`Waiting for ${browser.alias || browser.id.slice(0, 8)} to approve Cookie access...`);
+  const wsUrl = new URL("/v1/ws", relay);
+  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+  wsUrl.searchParams.set("code", code);
+  wsUrl.searchParams.set("token", readToken);
+  let wake;
+  let socket;
+  try {
+    socket = new WebSocket(wsUrl);
+    socket.on("message", (data) => {
+      try {
+        const event = JSON.parse(data.toString());
+        if (event.type === "access-decision" && event.requestId === access.id) wake?.();
+      } catch {}
+    });
+  } catch {}
+  while (Date.now() < access.expiresAt) {
+    const current = await request(`/v1/access-requests/${encodeURIComponent(access.id)}?code=${encodeURIComponent(code)}`, {
+      headers: { authorization: `Bearer ${readToken}` }
+    });
+    if (current.status === "approved") { socket?.close(); return access.id; }
+    if (current.status === "denied") { socket?.close(); throw new Error("Browser denied Cookie access."); }
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 3000);
+      wake = () => { clearTimeout(timer); resolve(); };
+    });
+  }
+  socket?.close();
+  throw new Error("Browser approval timed out.");
+}
+
 function toPlaywrightCookie(cookie) {
   const sameSite = {
     no_restriction: "None",
@@ -106,6 +144,7 @@ async function createPair() {
   console.log(`Pair code: ${pair.code}`);
   console.log(`Relay: ${relay}`);
   console.log(`Expires: ${new Date(pair.expiresAt).toISOString()}`);
+  console.log(`Open in Chrome: ${relay}/?pair=${encodeURIComponent(pair.code)}`);
 }
 
 async function pull(domain, browserSelector) {
@@ -113,7 +152,8 @@ async function pull(domain, browserSelector) {
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const browser = await resolveBrowser(browserSelector);
-  const message = await request(`/v1/messages?code=${encodeURIComponent(code)}&domain=${encodeURIComponent(domain)}&deviceId=${encodeURIComponent(browser.id)}`, {
+  const accessRequestId = await requestBrowserAccess(browser, [domain]);
+  const message = await request(`/v1/messages?code=${encodeURIComponent(code)}&domain=${encodeURIComponent(domain)}&deviceId=${encodeURIComponent(browser.id)}&accessRequestId=${encodeURIComponent(accessRequestId)}`, {
     headers: { authorization: `Bearer ${readToken}` }
   });
   const snapshot = decryptFrom(identity.privateKey, message.envelope);
@@ -129,7 +169,8 @@ async function pullAll(browserSelector) {
   const identity = credentials();
   const { code, readToken } = pairCredentials();
   const browser = await resolveBrowser(browserSelector);
-  const { messages } = await request(`/v1/messages?code=${encodeURIComponent(code)}&deviceId=${encodeURIComponent(browser.id)}`, {
+  const accessRequestId = await requestBrowserAccess(browser, ["*"]);
+  const { messages } = await request(`/v1/messages?code=${encodeURIComponent(code)}&deviceId=${encodeURIComponent(browser.id)}&accessRequestId=${encodeURIComponent(accessRequestId)}`, {
     headers: { authorization: `Bearer ${readToken}` }
   });
   if (!messages.length) throw new Error("No messages found.");

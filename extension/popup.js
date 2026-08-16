@@ -31,18 +31,35 @@ async function connect() {
   const device = await response.json();
   if (!response.ok) throw new Error(device.error || "Authorization failed.");
   await chrome.storage.local.set({ relay, deviceId: device.deviceId, uploadToken: device.uploadToken, publicKey: device.publicKey });
+  await chrome.storage.local.remove("pendingPair");
+  await setPolicy();
   await chrome.runtime.sendMessage({ type: "sync-all" });
   status("Authorized. CookieSync will continuously sync all permitted domains.");
 }
 
-chrome.storage.local.get(["relay", "deviceId"]).then((saved) => {
+async function setPolicy() {
+  const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
+  if (!deviceId) return;
+  const accessPolicy = $("policy").value;
+  const response = await fetch(`${relay}/v1/devices/${deviceId}/policy`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ accessPolicy })
+  });
+  if (!response.ok) throw new Error((await response.json()).error || "Failed to update access policy.");
+  await chrome.storage.local.set({ accessPolicy });
+  status(accessPolicy === "confirm" ? "每次 CLI 读取前都需要你确认。" : "CLI 读取时会通知你，但默认不阻塞。 ");
+}
+
+chrome.storage.local.get(["relay", "deviceId", "accessPolicy", "pendingPair"]).then((saved) => {
   $("relay").value = saved.relay || "https://relay.ivjn.us";
   if (saved.deviceId) {
     $("code").disabled = true;
     $("sync").textContent = "Sync all permitted domains now";
     status("This browser is authorized for continuous synchronization.");
   }
+  $("policy").value = saved.accessPolicy || "notify";
+  if (saved.pendingPair && !saved.deviceId) $("code").value = saved.pendingPair;
 });
+$("policy").addEventListener("change", () => setPolicy().catch((error) => status(`Error: ${error.message}`)));
 $("sync").addEventListener("click", () => {
   const action = $("code").disabled ? chrome.runtime.sendMessage({ type: "sync-all" }) : connect();
   action.catch((error) => status(`Error: ${error.message}`));

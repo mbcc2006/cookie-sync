@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "CookieSync",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Continuously encrypt and sync permitted browser cookies to a paired CookieSync CLI.",
-  "permissions": ["cookies", "storage", "alarms"],
+  "permissions": ["cookies", "storage", "alarms", "notifications"],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [{
+    "matches": ["https://relay.ivjn.us/*"],
+    "js": ["pair-bridge.js"],
+    "run_at": "document_start"
+  }],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "action": {
     "default_popup": "popup.html"
