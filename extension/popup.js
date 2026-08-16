@@ -1,6 +1,20 @@
 const $ = (id) => document.getElementById(id);
 const status = (message) => { $("status").textContent = message; };
 
+async function browserMetadata() {
+  const data = navigator.userAgentData;
+  const details = data?.getHighEntropyValues ? await data.getHighEntropyValues(["architecture", "bitness", "fullVersionList", "platformVersion"]) : {};
+  const brands = details.fullVersionList || data?.brands || [];
+  return {
+    userAgent: navigator.userAgent,
+    platform: data?.platform || navigator.platform || "",
+    os: [data?.platform || navigator.platform, details.platformVersion].filter(Boolean).join(" "),
+    architecture: [details.architecture, details.bitness].filter(Boolean).join(" "),
+    browser: brands.map((item) => `${item.brand} ${item.version}`).join(", "),
+    language: navigator.language
+  };
+}
+
 async function connect() {
   const relay = $("relay").value.replace(/\/$/, "");
   const code = $("code").value.trim();
@@ -10,8 +24,9 @@ async function connect() {
   const granted = await chrome.permissions.request({ origins: [`${relayUrl.origin}/*`, "https://*/*", "http://*/*"] });
   if (!granted) throw new Error("CookieSync needs relay and site permissions to keep cookies synchronized.");
   status("Authorizing this browser...");
+  const metadata = await browserMetadata();
   const response = await fetch(`${relay}/v1/devices`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code })
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, metadata })
   });
   const device = await response.json();
   if (!response.ok) throw new Error(device.error || "Authorization failed.");

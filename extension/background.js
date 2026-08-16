@@ -1,5 +1,17 @@
 const syncTimers = new Map();
 
+async function browserMetadata() {
+  const data = navigator.userAgentData;
+  const details = data?.getHighEntropyValues ? await data.getHighEntropyValues(["architecture", "bitness", "fullVersionList", "platformVersion"]) : {};
+  const brands = details.fullVersionList || data?.brands || [];
+  return {
+    userAgent: navigator.userAgent, platform: data?.platform || navigator.platform || "",
+    os: [data?.platform || navigator.platform, details.platformVersion].filter(Boolean).join(" "),
+    architecture: [details.architecture, details.bitness].filter(Boolean).join(" "),
+    browser: brands.map((item) => `${item.brand} ${item.version}`).join(", "), language: navigator.language
+  };
+}
+
 function base64(bytes) {
   let value = "";
   for (const byte of bytes) value += String.fromCharCode(byte);
@@ -32,7 +44,8 @@ async function syncDomain(domain) {
   if (!relay || !deviceId || !uploadToken || !publicKey) return;
   const cookies = await chrome.cookies.getAll({ domain });
   const envelope = await encrypt(publicKey, { domain, cookies, syncedAt: new Date().toISOString() });
-  const response = await fetch(`${relay}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, domain, envelope }) });
+  const metadata = await browserMetadata();
+  const response = await fetch(`${relay}/v1/messages`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, domain, envelope, metadata }) });
   if (!response.ok) throw new Error((await response.json()).error || "Cookie upload failed.");
 }
 
