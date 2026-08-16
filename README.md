@@ -11,7 +11,7 @@ npm install
 npm start
 ```
 
-Set `PORT` to change the listener port and `COOKIE_SYNC_RELAY_DATA` to change the encrypted-message directory. For a remote relay, use a reverse proxy with TLS and set `COOKIE_SYNC_RELAY=https://relay.example.com` on the CLI machine.
+Set `PORT` to change the listener port and `COOKIE_SYNC_RELAY_DATA` to change the encrypted-message directory. The CLI and extension default to `https://relay.ivjn.us`; set `COOKIE_SYNC_RELAY` only to use another relay.
 
 The default CORS policy permits every extension origin so unpacked extensions work during development. In production, set the Chrome extension ID after loading it once:
 
@@ -24,7 +24,7 @@ COOKIE_SYNC_ALLOWED_ORIGINS=chrome-extension://YOUR_EXTENSION_ID npm start
 On the CLI machine:
 
 ```bash
-COOKIE_SYNC_RELAY=https://relay.example.com npm run cli -- pair
+cookie-sync pair
 ```
 
 Load `extension/` as an unpacked extension in `chrome://extensions`, enter the relay URL, pair code, and a single domain, then click the sync button. The extension asks Chrome for only that domain's cookie permission.
@@ -32,14 +32,14 @@ Load `extension/` as an unpacked extension in `chrome://extensions`, enter the r
 Fetch the encrypted snapshot on the CLI machine:
 
 ```bash
-COOKIE_SYNC_RELAY=https://relay.example.com npm run cli -- pull github.com
-npm run cli -- browse https://github.com/
+cookie-sync pull github.com
+cookie-sync browse https://github.com/
 ```
 
 To wait for a person to press the extension's sync button before continuing an automation job:
 
 ```bash
-COOKIE_SYNC_RELAY=https://relay.example.com npm run cli -- wait github.com --timeout 300
+cookie-sync wait github.com --timeout 300
 ```
 
 State is held in `~/.local/share/cookie-sync` with private-file permissions. `browse` uses the installed Google Chrome binary and injects the stored Cookie snapshot into an isolated Playwright context. The CLI read token is never sent to the browser extension; it authorizes only the CLI to download and delete messages.
