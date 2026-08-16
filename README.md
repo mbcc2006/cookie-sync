@@ -159,7 +159,7 @@ For a browser where the extension cannot be installed, create a five-minute, sin
 npx @ivjnus/cookie-sync console github.com
 ```
 
-The command prints one self-contained `javascript:` URL. Open the target site, paste that URL into its DevTools Console or address bar, and keep the CLI running. It verifies the current hostname and encrypts visible cookies locally, then navigates to the relay's same-origin upload page to submit the ciphertext exactly once. No external script or cross-origin request is made from the target site, so strict `script-src` and `connect-src` policies do not block the import. The CLI consumes and deletes the envelope immediately.
+The command prints one self-contained `javascript:` URL. Open the target site, select the top-page execution context in DevTools Console (not an extension or iframe context), paste the URL, and keep the CLI running. It verifies the current hostname and encrypts visible cookies locally, then navigates to the relay's same-origin upload page to submit the ciphertext exactly once. No external script or cross-origin request is made from the target site, so strict `script-src` and `connect-src` policies do not block the import. A domain mismatch error reports both the expected and current hostname. The CLI consumes and deletes the envelope immediately.
 
 Use the imported snapshot with:
 

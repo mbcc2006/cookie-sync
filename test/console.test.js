@@ -16,6 +16,7 @@ test("creates a single-line JavaScript URL for Console import", () => {
   assert.equal(url.includes("console-import.js"), false);
   assert.equal(url.includes("createElement"), false);
   assert.equal(url.includes("/console-upload#"), true);
+  assert.equal(url.includes("select its top-page DevTools context"), true);
 });
 
 test("console command auto-pairs and completes from a JavaScript URL", async (context) => {

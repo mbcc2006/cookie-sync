@@ -14,7 +14,7 @@ import { toPlaywrightCookie, toPlaywrightStorageState } from "./playwright.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
-const CLI_VERSION = "0.8.0";
+const CLI_VERSION = "0.8.1";
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
