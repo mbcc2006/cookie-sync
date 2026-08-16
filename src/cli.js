@@ -3,6 +3,7 @@ import fs from "node:fs";
 import process from "node:process";
 import { chromium } from "playwright-core";
 import { decryptFrom, generateKeyPair } from "./crypto.js";
+import { chromeLaunchArgs, findChrome } from "./platform.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
@@ -101,9 +102,9 @@ async function waitForSnapshot(domain, timeoutSeconds) {
 async function browse(url) {
   const domain = new URL(url).hostname;
   const snapshot = readJson(`cookies-${domain}.json`);
-  const executablePath = process.env.CHROME_PATH || "/usr/bin/google-chrome";
-  if (!fs.existsSync(executablePath)) throw new Error(`Chrome not found at ${executablePath}. Set CHROME_PATH.`);
-  const browser = await chromium.launch({ executablePath, headless: true, args: ["--no-sandbox"] });
+  const executablePath = findChrome();
+  if (!executablePath || !fs.existsSync(executablePath)) throw new Error("Chrome or Chromium was not found. Set CHROME_PATH to its executable path.");
+  const browser = await chromium.launch({ executablePath, headless: true, args: chromeLaunchArgs() });
   try {
     const context = await browser.newContext();
     await context.addCookies(snapshot.cookies.map(toPlaywrightCookie));
