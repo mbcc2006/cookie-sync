@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Build cookie-sync.ivjn.us for Cloudflare Pages: one prerendered page per language plus SEO and agent files.
 // Usage: npm run build:site   (output: dist-site/)
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -75,14 +76,23 @@ ${I.LANGS.filter((c) => c !== code).map((c) => `  <meta property="og:locale:alte
 `;
 }
 
-export function renderPage(template, I, code, pkg) {
+// Plain links, so switching works without JavaScript and crawlers can follow every language.
+function langMenu(I, code) {
+  const items = I.LANGS.map((c) => `<li><a href="${pathFor(c)}" hreflang="${hreflang(c)}" lang="${hreflang(c)}"${c === code ? ' aria-current="page"' : ""}>${esc(I.NAMES[c])}</a></li>`).join("");
+  return `<details class="lang-menu"><summary aria-label="Language">${esc(I.NAMES[code])}</summary><ul>${items}</ul></details>`;
+}
+
+// assets maps file name -> content hash; the query string changes whenever the file does, so stale caches cannot mix versions.
+export function renderPage(template, I, code, pkg, assets = {}) {
   const expected = (template.match(/\bdata-i18n="/g) || []).length;
   let replaced = 0;
   let html = template
     .replace(/<html lang="[^"]*">/, `<html lang="${hreflang(code)}" dir="${I.RTL.includes(code) ? "rtl" : "ltr"}" data-lang="${code}">`)
     .replace(/(<meta name="description" id="meta-description" content=")[^"]*(")/, `$1${esc(I.t(code, "meta.description"))}$2`)
     .replace(/(<title id="page-title">)[^<]*(<\/title>)/, `$1${esc(I.t(code, "meta.title"))}$2`)
-    .replace(/(href|src)="(styles\.css|i18n\.js|app\.js)"/g, '$1="/$2"')
+    .replace(/(href|src)="(styles\.css|app\.js)"/g, (_, attr, file) => `${attr}="/${file}${assets[file] ? `?v=${assets[file]}` : ""}"`)
+    .replace("{{langMenu}}", langMenu(I, code))
+    .replace(/data-copy="/g, `data-copied="${esc(I.t(code, "copy.copied"))}" data-copy="`)
     .replace(/(<([a-zA-Z0-9]+)\b[^>]*\bdata-i18n="([^"]+)"[^>]*>)[^<]*(<\/\2>)/g, (_, open, tag, key, close) => {
       replaced++;
       return `${open}${esc(I.t(code, key))}${close}`;
@@ -210,7 +220,8 @@ export function buildSite(out = path.join(root, "dist-site")) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, content);
   };
-  for (const code of I.LANGS) write(path.join(pathFor(code), "index.html"), renderPage(template, I, code, pkg));
+  const assets = Object.fromEntries(["styles.css", "app.js"].map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(site, f))).digest("hex").slice(0, 10)]));
+  for (const code of I.LANGS) write(path.join(pathFor(code), "index.html"), renderPage(template, I, code, pkg, assets));
   for (const f of ["styles.css", "i18n.js", "app.js", "og.png"]) fs.copyFileSync(path.join(site, f), path.join(out, f));
   fs.copyFileSync(path.join(root, "extension", "icon.png"), path.join(out, "favicon.png"));
   const skill = fs.readFileSync(path.join(root, "skills", "cookie-sync", "SKILL.md"), "utf8").replace(/\r\n/g, "\n");

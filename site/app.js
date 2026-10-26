@@ -1,14 +1,9 @@
-const I18N = window.CookieSyncI18n;
-// Pages are prerendered per language ("/" is English, "/<code>/" the others); the switcher moves between them.
-const lang = document.documentElement.dataset.lang || "en";
-const t = (key, params) => I18N.t(lang, key, params);
-const pathFor = (code) => (code === "en" ? "/" : `/${code}/`);
-
+// Pages are prerendered per language; the language menu is plain links, so this file only adds conveniences.
 document.querySelectorAll("[data-copy]").forEach((button) => {
   button.addEventListener("click", async () => {
     await navigator.clipboard.writeText(button.dataset.copy);
     const original = button.textContent;
-    button.textContent = t("copy.copied");
+    button.textContent = button.dataset.copied;
     setTimeout(() => { button.textContent = original; }, 1400);
   });
 });
@@ -20,7 +15,7 @@ document.querySelectorAll(".tabs button").forEach((button) => {
   });
 });
 
-const select = document.getElementById("lang-switch");
-select.replaceChildren(...I18N.LANGS.map((code) => new Option(I18N.NAMES[code], code)));
-select.value = lang;
-select.addEventListener("change", () => location.assign(pathFor(select.value) + location.hash));
+// Close the language menu when clicking elsewhere or pressing Escape.
+const menu = document.querySelector(".lang-menu");
+document.addEventListener("click", (event) => { if (menu && !menu.contains(event.target)) menu.open = false; });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && menu) menu.open = false; });
