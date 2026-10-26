@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CookieSync 官网 SEO 流程</title>
+<style>
+  :root { --bg:#fbf8ef; --card:#fff; --text:#13251d; --muted:#5d6b63; --line:#ddd6c4; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141a17; --card:#1c2420; --text:#e7ece9; --muted:#9aa7a0; --line:#2e3833; } }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text); font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  main { max-width:960px; margin:0 auto; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin:18px 0; }
+  h1 { font-size:24px; margin:0 0 6px; } h2 { font-size:18px; margin:0 0 8px; }
+  p, li { color:var(--muted); } code { font-size:13px; }
+  .mermaid { overflow-x:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>cookie-sync.ivjn.us：多语言页面、llms.txt 与 skill</h1>
+  <p>已定：迁到 Cloudflare Pages；19 种语言各自一个静态网址；skill 网站发布 + <code>cookie-sync skill</code> 命令。</p>
+
+  <section>
+    <h2>1. 构建与部署</h2>
+    <pre class="mermaid">
+flowchart TD
+  T["site/index.html 模板 + site/i18n.js 19 种语言"] --> B["npm run build:site"]
+  B --> P["dist-site/index.html（en）与 /zh/、/ja/ … 共 19 页<br/>每页：本地化 title/description、hreflang、canonical、OG、JSON-LD"]
+  B --> F["sitemap.xml、robots.txt、llms.txt、llms-full.txt、skill/SKILL.md、og.png、_headers、404.html"]
+  P --> D["wrangler pages deploy → Pages 项目 cookie-sync-site"]
+  F --> D
+  D --> DNS["cookie-sync.ivjn.us 绑定到 Pages<br/>relay.ivjn.us 保持在原服务器"]
+    </pre>
+  </section>
+
+  <section>
+    <h2>2. 访客切换语言</h2>
+    <pre class="mermaid">
+flowchart TD
+  V["访客打开 cookie-sync.ivjn.us/ja/"] --> R["服务器直接返回日语页面（爬虫也能读到）"]
+  R --> S{"在下拉框选别的语言?"}
+  S -->|否| Stay["停留"]
+  S -->|是| Nav["记住选择，跳转到 /(code)/ ，英语为 /"]
+  V2["访客打开根路径 /"] --> EN["返回英语页面，不按浏览器语言自动跳转（避免爬虫只看到一种语言）"]
+    </pre>
+  </section>
+
+  <section>
+    <h2>3. cookie-sync skill 命令</h2>
+    <pre class="mermaid">
+flowchart TD
+  C["cookie-sync skill [--dir d] [--stdout] [--offline] [--force]"] --> O{"--offline?"}
+  O -->|否| W["取 https://cookie-sync.ivjn.us/skill/SKILL.md（5 秒超时）"]
+  W -->|失败| L["用 npm 包内自带的 skills/cookie-sync/SKILL.md"]
+  O -->|是| L
+  W -->|成功| X
+  L --> X{"--stdout?"}
+  X -->|是| Out["打印到标准输出"]
+  X -->|否| E{"d/SKILL.md 已存在且没有 --force?"}
+  E -->|是| Err["报错，不覆盖"]
+  E -->|否| Write["写入 d/SKILL.md（默认 d = cookie-sync）"]
+    </pre>
+  </section>
+
+  <section>
+    <h2>待拍板事项</h2>
+    <p>无。</p>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'neutral' });</script>
+</body>
+</html>

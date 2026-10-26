@@ -1,12 +1,13 @@
 {
   "name": "@ivjnus/cookie-sync",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Keep headless browsers signed in: end-to-end encrypted cookie sync from Chrome to a CLI, Playwright, curl and yt-dlp",
   "license": "MIT",
   "author": "mbcc2006",
   "type": "module",
   "files": [
-    "src/"
+    "src/",
+    "skills/"
   ],
   "bin": {
     "cookie-sync": "src/cli.js"
@@ -19,7 +20,9 @@
     "cli": "node src/cli.js",
     "test": "node --test",
     "prepublishOnly": "npm test",
-    "pack:extension": "node scripts/pack-extension.mjs"
+    "pack:extension": "node scripts/pack-extension.mjs",
+    "build:site": "node scripts/build-site.mjs",
+    "deploy:site": "npm run build:site && npx wrangler@4 deploy"
   },
   "repository": {
     "type": "git",

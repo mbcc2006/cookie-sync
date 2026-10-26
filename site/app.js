@@ -1,28 +1,8 @@
 const I18N = window.CookieSyncI18n;
-let lang = "en";
+// Pages are prerendered per language ("/" is English, "/<code>/" the others); the switcher moves between them.
+const lang = document.documentElement.dataset.lang || "en";
 const t = (key, params) => I18N.t(lang, key, params);
-
-function resolveLang() {
-  const saved = localStorage.getItem("cs-lang");
-  if (saved && I18N.LANGS.includes(saved)) return saved;
-  return I18N.detectLang();
-}
-
-function applyTranslations() {
-  document.documentElement.lang = lang;
-  document.documentElement.dir = I18N.RTL.includes(lang) ? "rtl" : "ltr";
-  document.title = t("meta.title");
-  document.getElementById("meta-description").setAttribute("content", t("meta.description"));
-  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
-  document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
-}
-
-function setLang(next) {
-  lang = next;
-  document.getElementById("lang-switch").value = next;
-  applyTranslations();
-  localStorage.setItem("cs-lang", next);
-}
+const pathFor = (code) => (code === "en" ? "/" : `/${code}/`);
 
 document.querySelectorAll("[data-copy]").forEach((button) => {
   button.addEventListener("click", async () => {
@@ -40,9 +20,7 @@ document.querySelectorAll(".tabs button").forEach((button) => {
   });
 });
 
-document.getElementById("lang-switch").addEventListener("change", (event) => setLang(event.target.value));
-
-document.getElementById("lang-switch").replaceChildren(...I18N.LANGS.map((code) => new Option(I18N.NAMES[code], code)));
-lang = resolveLang();
-document.getElementById("lang-switch").value = lang;
-applyTranslations();
+const select = document.getElementById("lang-switch");
+select.replaceChildren(...I18N.LANGS.map((code) => new Option(I18N.NAMES[code], code)));
+select.value = lang;
+select.addEventListener("change", () => location.assign(pathFor(select.value) + location.hash));

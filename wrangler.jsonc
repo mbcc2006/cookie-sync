@@ -1,0 +1,12 @@
+// cookie-sync.ivjn.us: static site built by `npm run build:site` (Workers static assets).
+// The relay is not a Worker; it runs with `npm start` on its own server.
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "cookie-sync-site",
+  "compatibility_date": "2026-10-19",
+  "routes": [{ "pattern": "cookie-sync.ivjn.us", "custom_domain": true }],
+  "assets": {
+    "directory": "dist-site",
+    "not_found_handling": "404-page"
+  }
+}

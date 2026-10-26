@@ -9,7 +9,7 @@ select { font:inherit; }
 .wrap { width:min(1180px, calc(100% - 48px)); margin-inline:auto; }
 .nav { height:78px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
 .brand { display:flex; align-items:center; gap:11px; font-weight:900; letter-spacing:-.03em; }
-.brand-mark { display:grid; place-items:center; width:34px; height:34px; background:var(--ink); color:var(--acid); font:600 12px var(--mono); transform:rotate(-3deg); }
+.brand-mark { display:block; width:34px; height:34px; }
 .nav nav { display:flex; gap:34px; font-size:14px; font-weight:600; }
 .nav nav a:hover { color:var(--orange); }
 .nav-cta { font:500 13px var(--mono); border-bottom:1px solid var(--ink); padding-bottom:4px; }

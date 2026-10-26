@@ -42,3 +42,23 @@ fs.writeFileSync(process.env.RESULT_FILE, JSON.stringify({
   assert.equal(fs.existsSync(result.cookieFile), false);
   assert.equal(fs.existsSync(path.dirname(result.cookieFile)), false);
 });
+
+test("skill installs the bundled agent skill and does not overwrite without --force", (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-skill-test-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const target = path.join(directory, "skills", "cookie-sync");
+  const run = (...extra) => spawnSync(process.execPath, ["src/cli.js", "skill", "--offline", "--dir", target, ...extra], {
+    cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8",
+    env: { ...process.env, COOKIE_SYNC_HOME: directory, COOKIE_SYNC_LANG: "en" }
+  });
+
+  const first = run();
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(fs.readFileSync(path.join(target, "SKILL.md"), "utf8"), /^---\r?\nname: cookie-sync\r?\n/);
+  const again = run();
+  assert.equal(again.status, 1);
+  assert.match(again.stderr, /--force/);
+  assert.equal(run("--force").status, 0);
+  const printed = run("--stdout");
+  assert.match(printed.stdout, /^---\r?\nname: cookie-sync/);
+});

@@ -432,6 +432,31 @@ function langCommand(value) {
   console.log(t("info.langSet", { lang: applied }));
 }
 
+const SKILL_URL = "https://cookie-sync.ivjn.us/skill/SKILL.md";
+
+// Install the agent skill: the website copy is the newest; the one shipped in the package works offline.
+async function skill({ dir = "cookie-sync", stdout = false, offline = false, force = false } = {}) {
+  let text;
+  let source = "bundled";
+  if (!offline) {
+    try {
+      const response = await fetch(SKILL_URL, { signal: AbortSignal.timeout(5000) });
+      const body = response.ok ? await response.text() : "";
+      if (/^---\r?\nname: cookie-sync/.test(body)) { text = body; source = "website"; }
+    } catch {}
+  }
+  text ??= fs.readFileSync(new URL("../skills/cookie-sync/SKILL.md", import.meta.url), "utf8");
+  if (stdout) {
+    process.stdout.write(text);
+    return;
+  }
+  const file = path.join(dir, "SKILL.md");
+  if (fs.existsSync(file) && !force) throw new Error(t("error.skillExists", { file }));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, text);
+  console.log(t("info.skillWritten", { file, source: t(`skill.source.${source}`) }));
+}
+
 const args = process.argv.slice(2);
 const [command, value] = args;
 const separator = args.indexOf("--");
@@ -459,6 +484,7 @@ try {
   else if (command === "import") await importPair(value);
   else if (command === "lang") langCommand(value);
   else if (command === "status") status();
+  else if (command === "skill") await skill({ dir: optionValue("--dir"), stdout: commandArgs.includes("--stdout"), offline: commandArgs.includes("--offline"), force: commandArgs.includes("--force") });
   else throw new Error(t("error.usage"));
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
