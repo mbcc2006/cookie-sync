@@ -11,13 +11,14 @@ async function storedScope() {
   return { allowed: allowedDomains, allSites };
 }
 
-// What may be synced right now; drops anything the user has since withdrawn in Chrome's site access settings.
+// What may be synced right now. Sites whose access was withdrawn stay in the list (the popup offers to allow them
+// again) but are skipped; that also covers sites added while "Sync all sites" was on, which Chrome does not record.
 async function syncScope() {
   const scope = await storedScope();
   const allSites = scope.allSites && await chrome.permissions.contains({ origins: D.ALL_SITES });
+  if (allSites !== scope.allSites) await chrome.storage.local.set({ allSites });
   const allowed = [];
-  for (const domain of scope.allowed) if (await chrome.permissions.contains({ origins: D.originsFor(domain) })) allowed.push(domain);
-  if (allowed.length !== scope.allowed.length || allSites !== scope.allSites) await chrome.storage.local.set({ allowedDomains: allowed, allSites });
+  for (const domain of scope.allowed) if (allSites || await chrome.permissions.contains({ origins: D.originsFor(domain) })) allowed.push(domain);
   return { allowed, allSites };
 }
 
@@ -160,8 +161,11 @@ async function showAccessRequest(request) {
   await chrome.storage.local.set({ [key]: true });
   const scope = await syncScope();
   // pull-all asks for "*", which means whatever is already allowed.
-  const missing = scope.allSites ? [] : (request.domains || []).filter((domain) => domain !== "*" && !scope.allowed.includes(domain));
+  const requested = request.domains || [];
+  const missing = scope.allSites ? [] : requested.filter((domain) => domain !== "*" && !scope.allowed.includes(domain));
   if (missing.length) await promptGrant(missing);
+  // Nothing could be read, so a "cookies were read" notice would mislead; confirm mode still needs a decision.
+  if (missing.length && missing.length === requested.length && request.mode !== "confirm") return;
   const confirm = request.mode === "confirm" && request.status === "pending";
   const lang = await currentLang();
   const i18n = self.CookieSyncI18n;

@@ -55,7 +55,18 @@ async function renderDomains() {
     li.classList.add("pending");
     return li;
   }));
-  $("domains").replaceChildren(...allowedDomains.map((domain) => domainItem(domain, t("domains.remove"), removeDomain)));
+  const items = [];
+  for (const domain of allowedDomains) {
+    // Access can be withdrawn in Chrome's settings, or was never recorded because "Sync all sites" covered it.
+    const granted = allSites || await chrome.permissions.contains({ origins: D.originsFor(domain) });
+    if (granted) items.push(domainItem(domain, t("domains.remove"), removeDomain));
+    else {
+      const li = domainItem(domain, t("domains.add"), allowDomain, t("domains.regrant"));
+      li.classList.add("pending");
+      items.push(li);
+    }
+  }
+  $("domains").replaceChildren(...items);
   $("domains-empty").hidden = allowedDomains.length > 0 || pending.length > 0;
   $("all-sites").checked = allSites;
 }
