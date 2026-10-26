@@ -1,7 +1,7 @@
 {
   "name": "@ivjnus/cookie-sync",
-  "version": "0.9.0",
-  "description": "Securely sync browser cookies to CLI and Playwright",
+  "version": "0.9.1",
+  "description": "Keep headless browsers signed in: end-to-end encrypted cookie sync from Chrome to a CLI, Playwright, curl and yt-dlp",
   "license": "MIT",
   "author": "mbcc2006",
   "type": "module",
@@ -31,8 +31,16 @@
   },
   "keywords": [
     "cookies",
+    "cookie-sync",
+    "headless",
     "playwright",
-    "browser",
+    "storageState",
+    "chrome-extension",
+    "e2ee",
+    "end-to-end-encryption",
+    "automation",
+    "curl",
+    "yt-dlp",
     "cli"
   ],
   "publishConfig": {

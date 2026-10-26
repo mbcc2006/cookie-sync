@@ -1,6 +1,64 @@
 # CookieSync
 
-CookieSync transfers selected browser cookies from a Chrome extension on one device to a CLI on another device. The relay stores only encrypted message envelopes; the CLI owns the X25519 private key and is the only device able to decrypt a snapshot.
+**Keep headless browsers and scripts signed in, without copying passwords around.**
+
+Sign in once in the Chrome profile you already use. CookieSync encrypts the cookies of the sites you choose inside that browser and hands them to the CookieSync CLI on another machine, where Playwright, curl, wget or yt-dlp can use them. The relay in between only ever sees encrypted envelopes.
+
+```
+Chrome + CookieSync extension ──(X25519 + AES-256-GCM)──▶ relay ──▶ CookieSync CLI ──▶ Playwright / curl / yt-dlp
+   you choose the sites            relay cannot decrypt            only the CLI holds the private key
+```
+
+## Why CookieSync
+
+- **You choose the sites.** Nothing is read until you allow a site in the extension. "Sync all sites" exists, but it is off by default and Chrome asks again before it turns on.
+- **End-to-end encrypted.** Snapshots are encrypted in the browser with the CLI's public key; the relay stores ciphertext for at most 7 days and deletes it after the CLI pulls it.
+- **You stay in control.** Every CLI read is recorded with the requested sites, reason, host name and IP. Reads can require your confirmation, and revoking a browser deletes its data on the relay.
+- **Ready-made exports.** Playwright `storageState`, raw JSON, Netscape `cookies.txt`, or a one-shot `yt-dlp` run with a temporary cookie file.
+- **Several browsers, one CLI.** Pair work and personal Chrome profiles and pick one per command.
+- **Open source and self-hostable.** MIT licensed; run your own relay with `npm start`.
+
+## Quick start
+
+1. **Install the extension.** [CookieSync on the Chrome Web Store](https://chromewebstore.google.com/detail/bijlomfalfpalpmjnlkimmoeehjpbgfn) (in review; until it is live, load `extension/` from this repository as an unpacked extension in `chrome://extensions`). Accept the data-handling notice it opens.
+2. **Pair it with the CLI** (Node.js 20+):
+
+   ```bash
+   npx @ivjnus/cookie-sync pair
+   ```
+
+   Open the printed Pair URL in Chrome; the extension pre-fills the code. Click **Pair**.
+3. **Allow a site and pull it.** In the extension popup, add `github.com` under **Sites to sync**, then:
+
+   ```bash
+   npx @ivjnus/cookie-sync pull github.com
+   npx @ivjnus/cookie-sync playwright github.com --out playwright/.auth/github.json
+   ```
+
+## Commands at a glance
+
+| Command | What it does |
+|---|---|
+| `pair` | Create a one-time pair code and Pair URL for the extension |
+| `status` | Show the relay, state directory and current pairing |
+| `browsers` / `browser set` | List paired browsers; set an alias or note |
+| `pull <domain>` / `pull-all` | Download and decrypt the latest snapshot of one site / every site waiting on the relay |
+| `wait <domain>` | Wait until the browser uploads a snapshot for a site |
+| `playwright <domain>` | Write a Playwright `storageState` file |
+| `cookies <domain> --format json` | Export raw cookies as JSON, or `--format txt` for a Netscape `cookies.txt` |
+| `yt-dlp <url> -- [args]` | Run yt-dlp with a temporary, private cookie file |
+| `browse <url>` | Load a page in headless Chrome with the synced cookies and print its title (a quick sign-in check) |
+| `open <url>` | Ask the paired Chrome to open a page in a new tab |
+| `console <domain>` | One-time import from the browser console, without the extension |
+| `export` / `import` | Move a pairing to another machine |
+| `revoke` | Revoke the pairing and its browsers |
+| `lang <code>` | Set the CLI language: `en`, `zh`, `ja` or `ko` |
+
+Every command that reads cookies accepts `--browser <id or alias>` and `--reason "<why>"`; the reason is shown in the extension's notifications and access log.
+
+## Privacy
+
+The extension reads only the sites you allow and asks for consent before reading anything. See the [privacy policy](https://ivjn.us/cookie-sync/privacy/) for exactly what is collected, where it goes and how long it is kept.
 
 ## Project links
 
@@ -53,7 +111,9 @@ npx @ivjnus/cookie-sync pair
 
 The command prints a clickable `Pair URL`, for example `https://relay.ivjn.us/?pair=...`. Open it in Chrome to validate the short-lived code, prefill the installed CookieSync extension, and attempt to open its popup. If Chrome blocks automatic popup opening, click the CookieSync toolbar icon; the pair code remains prefilled.
 
-Load `extension/` as an unpacked extension in `chrome://extensions`, enter the relay URL and pair code, then authorize it once. Chrome asks for cookie access to all sites. The extension receives a dedicated upload-only token and continuously syncs every cookie domain on changes, browser startup, and a 15-minute fallback interval. The relay stores only the latest encrypted snapshot for each domain.
+Install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/bijlomfalfpalpmjnlkimmoeehjpbgfn) (in review), or load `extension/` as an unpacked extension in `chrome://extensions`. On first run it opens a page explaining what it reads and where the data goes; accept it, then enter the pair code and click **Pair**. Pairing only grants access to the relay and gives the extension a dedicated upload-only token.
+
+Then choose what to share. Add a site such as `github.com` under **Sites to sync**; Chrome asks for access to that site only, and the extension syncs its cookies on changes, browser startup and a 15-minute fallback interval. If the CLI asks for a site you have not allowed, the extension shows a notification that opens the popup with the site pre-filled. **Sync all sites** syncs every cookie domain instead; it is off by default and needs a separate Chrome permission. The relay stores only the latest encrypted snapshot for each site.
 
 Fetch the encrypted snapshot on the CLI machine:
 
