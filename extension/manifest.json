@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CookieSync",
-  "version": "0.8.2",
-  "description": "Continuously encrypt and sync permitted browser cookies to a paired CookieSync CLI.",
+  "version": "0.9.0",
+  "description": "Keep headless browsers signed in: end-to-end encrypt the cookies of sites you choose and sync them to your CookieSync CLI.",
   "icons": {
     "128": "icon.png"
   },

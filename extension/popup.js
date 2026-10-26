@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+const D = self.CookieSyncDomains;
 const status = (message) => { $("status").textContent = message; };
 const maskPairCode = (code) => code.length > 9 ? `${code.slice(0, 4)}...${code.slice(-4)}` : code;
 
@@ -21,6 +22,86 @@ async function setLang(next) {
   $("lang").value = next;
   applyTranslations();
   await chrome.storage.local.set({ lang: next });
+  await renderDomains();
+}
+
+async function hasConsent() {
+  const { consentVersion = 0 } = await chrome.storage.local.get("consentVersion");
+  return consentVersion >= D.CONSENT_VERSION;
+}
+
+function domainItem(domain, label, action, note) {
+  const li = document.createElement("li");
+  const text = document.createElement("span");
+  text.textContent = domain;
+  if (note) {
+    const small = document.createElement("small");
+    small.textContent = note;
+    text.append(small);
+  }
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.addEventListener("click", () => action(domain).catch((error) => status(t("status.errorPrefix", { message: error.message }))));
+  li.append(text, button);
+  return li;
+}
+
+async function renderDomains() {
+  const { allowedDomains = [], pendingDomains = [], allSites = false } = await chrome.storage.local.get(["allowedDomains", "pendingDomains", "allSites"]);
+  const requested = new URLSearchParams(location.search).get("add");
+  const pending = [...new Set([...pendingDomains, requested].map(D.normalizeDomain).filter(Boolean))].filter((domain) => !allowedDomains.includes(domain));
+  $("pending").replaceChildren(...pending.map((domain) => {
+    const li = domainItem(domain, t("domains.add"), allowDomain, t("domains.requested", { domain }));
+    li.classList.add("pending");
+    return li;
+  }));
+  $("domains").replaceChildren(...allowedDomains.map((domain) => domainItem(domain, t("domains.remove"), removeDomain)));
+  $("domains-empty").hidden = allowedDomains.length > 0 || pending.length > 0;
+  $("all-sites").checked = allSites;
+}
+
+// permissions.request must run straight from the click, before other awaits use up the user gesture.
+async function allowDomain(input) {
+  const domain = D.normalizeDomain(input);
+  if (!domain) throw new Error(t("domains.invalid"));
+  const granted = await chrome.permissions.request({ origins: D.originsFor(domain) });
+  if (!granted) throw new Error(t("domains.denied", { domain }));
+  const { allowedDomains = [], pendingDomains = [] } = await chrome.storage.local.get(["allowedDomains", "pendingDomains"]);
+  await chrome.storage.local.set({
+    allowedDomains: [...new Set([...allowedDomains, domain])].sort(),
+    pendingDomains: pendingDomains.filter((item) => item !== domain)
+  });
+  $("domain-input").value = "";
+  await renderDomains();
+  const result = await chrome.runtime.sendMessage({ type: "sync-domains", domains: [domain] });
+  if (result?.error) throw new Error(result.error);
+  status(t("domains.added", { domain }));
+}
+
+async function removeDomain(domain) {
+  const { allowedDomains = [] } = await chrome.storage.local.get("allowedDomains");
+  await chrome.storage.local.set({ allowedDomains: allowedDomains.filter((item) => item !== domain) });
+  await chrome.permissions.remove({ origins: D.originsFor(domain) }).catch(() => {});
+  await renderDomains();
+  status(t("domains.removed", { domain }));
+}
+
+async function setAllSites(on) {
+  if (on) {
+    const granted = await chrome.permissions.request({ origins: D.ALL_SITES });
+    if (!granted) {
+      $("all-sites").checked = false;
+      throw new Error(t("allSites.denied"));
+    }
+    await chrome.storage.local.set({ allSites: true });
+    await chrome.runtime.sendMessage({ type: "sync-all" });
+    status(t("allSites.on"));
+  } else {
+    await chrome.storage.local.set({ allSites: false });
+    await chrome.permissions.remove({ origins: D.ALL_SITES }).catch(() => {});
+    status(t("allSites.off"));
+  }
+  await renderDomains();
 }
 
 async function browserMetadata() {
@@ -41,9 +122,11 @@ async function connect() {
   const relay = $("relay").value.replace(/\/$/, "");
   const code = $("code").value.trim();
   if (!relay || !code) throw new Error(t("status.missingFields"));
+  if (!(await hasConsent())) throw new Error(t("consent.required"));
   const relayUrl = new URL(relay);
   if (relayUrl.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(relayUrl.hostname)) throw new Error(t("status.httpsRequired"));
-  const granted = await chrome.permissions.request({ origins: [`${relayUrl.origin}/*`, "https://*/*", "http://*/*"] });
+  // Pairing only needs the relay; sites are allowed one by one afterwards.
+  const granted = await chrome.permissions.request({ origins: [`${relayUrl.origin}/*`] });
   if (!granted) throw new Error(t("status.permissionRequired"));
   status(t("status.authorizing"));
   const metadata = await browserMetadata();
@@ -157,7 +240,23 @@ function showAuthorized(pairedCode) {
   }
   $("policy").value = saved.accessPolicy || "notify";
   if (saved.pendingPair && !saved.deviceId) $("code").value = saved.pendingPair;
+
+  const consented = await hasConsent();
+  $("consent").hidden = consented;
+  $("domains-section").hidden = !consented;
+  if (!saved.deviceId) $("sync").disabled = !consented;
+  await renderDomains();
 })();
+
+$("open-welcome").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") }));
+$("add-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  allowDomain($("domain-input").value).catch((error) => status(t("status.errorPrefix", { message: error.message })));
+});
+$("all-sites").addEventListener("change", () => setAllSites($("all-sites").checked).catch((error) => status(t("status.errorPrefix", { message: error.message }))));
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.allowedDomains || changes.pendingDomains || changes.allSites) renderDomains();
+});
 
 $("lang").addEventListener("change", () => setLang($("lang").value));
 $("policy").addEventListener("change", () => setPolicy().catch((error) => status(t("status.errorPrefix", { message: error.message }))));

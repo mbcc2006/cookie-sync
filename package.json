@@ -1,6 +1,6 @@
 {
   "name": "@ivjnus/cookie-sync",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "Securely sync browser cookies to CLI and Playwright",
   "license": "MIT",
   "author": "mbcc2006",
@@ -18,7 +18,8 @@
     "start": "node src/relay.js",
     "cli": "node src/cli.js",
     "test": "node --test",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "pack:extension": "node scripts/pack-extension.mjs"
   },
   "repository": {
     "type": "git",

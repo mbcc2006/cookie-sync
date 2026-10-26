@@ -9,14 +9,30 @@
     label, input, select, button { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
     button { padding: 8px; }
     #status { white-space: pre-wrap; }
-    .audit-head { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #ccc; margin-top: 16px; padding-top: 12px; }
-    .audit-head button { width: auto; padding: 5px 9px; margin: 0; }
+    .notice { padding: 10px 12px; border-left: 3px solid #d45a34; background: white; }
+    .notice button { width: auto; margin: 8px 0 0; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #ccc; margin-top: 16px; padding-top: 12px; }
+    .section-head button { width: auto; padding: 5px 9px; margin: 0; }
+    .add-row { display: flex; gap: 6px; }
+    .add-row input { margin: 8px 0; }
+    .add-row button { width: auto; flex: none; }
+    .domains { list-style: none; margin: 0; padding: 0; }
+    .domains li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; margin: 6px 0; background: white; }
+    .domains li.pending { border-left: 3px solid #d45a34; }
+    .domains li span { overflow-wrap: anywhere; }
+    .domains li small { display: block; color: #66736c; }
+    .domains li button { width: auto; flex: none; margin: 0; padding: 4px 9px; }
+    .muted { color: #66736c; font-size: 12px; }
+    .toggle { display: flex; align-items: center; gap: 8px; }
+    .toggle input { width: auto; margin: 0; }
     #audit { max-height: 260px; overflow: auto; margin-top: 8px; }
     .event { border-left: 3px solid #88958e; padding: 7px 9px; margin: 7px 0; background: white; font-size: 12px; }
     .event.approved, .event.auto-approved, .event.consumed { border-color: #4d8f38; }
     .event.denied, .event.expired { border-color: #d45a34; }
     .event b, .event time, .event small { display: block; }
     .event time, .event small { color: #66736c; margin-top: 3px; }
+    footer { margin-top: 16px; font-size: 12px; }
+    footer a { color: #13251d; }
   </style>
 </head>
 <body>
@@ -29,22 +45,40 @@
       <option value="ko">한국어</option>
     </select>
   </label>
+  <div id="consent" class="notice" hidden>
+    <span data-i18n="consent.required">Read and accept how CookieSync handles your data before pairing.</span>
+    <button id="open-welcome" data-i18n="consent.open">Open the explanation</button>
+  </div>
   <label><span data-i18n="label.relay">Relay URL</span><input id="relay" value="https://relay.ivjn.us" disabled></label>
   <label id="pair-code-label"><span data-i18n="label.pairCode">Pair code</span><input id="code" placeholder="ABC123..."></label>
-  <label><span data-i18n="label.policy">CLI 读取 Cookie</span>
+  <label><span data-i18n="label.policy">CLI Cookie access</span>
     <select id="policy">
-      <option value="notify" data-i18n="policy.notify">默认允许，但通知提示</option>
-      <option value="confirm" data-i18n="policy.confirm">每次都需要确认</option>
+      <option value="notify" data-i18n="policy.notify">Allow by default, but notify me</option>
+      <option value="confirm" data-i18n="policy.confirm">Always ask for confirmation</option>
     </select>
   </label>
-  <button id="sync" data-i18n="button.sync.authorize">Authorize and sync all permitted domains</button>
-  <button id="revoke" hidden data-i18n="button.revoke">取消授权</button>
+  <button id="sync" data-i18n="button.sync.authorize">Pair</button>
+  <button id="revoke" hidden data-i18n="button.revoke">Revoke authorization</button>
   <p id="status"></p>
-  <section id="audit-section" hidden>
-    <div class="audit-head"><strong data-i18n="audit.title">Cookie 读取审计</strong><button id="refresh-audit" data-i18n="audit.refresh">刷新</button></div>
-    <div id="audit"><p data-i18n="audit.empty">暂无访问记录。</p></div>
+  <section id="domains-section" hidden>
+    <div class="section-head"><strong data-i18n="domains.title">Sites to sync</strong></div>
+    <form class="add-row" id="add-form">
+      <input id="domain-input" placeholder="github.com" autocomplete="off">
+      <button type="submit" data-i18n="domains.add">Allow</button>
+    </form>
+    <ul class="domains" id="pending"></ul>
+    <ul class="domains" id="domains"></ul>
+    <p class="muted" id="domains-empty" data-i18n="domains.empty">No sites yet. Add a site to start syncing its cookies.</p>
+    <label class="toggle"><input type="checkbox" id="all-sites"><span data-i18n="allSites.label">Sync all sites (not recommended)</span></label>
+    <p class="muted" data-i18n="allSites.warning">CookieSync will read the cookies of every site in this browser, encrypt them and upload them to the relay for your CLI. Only turn this on if you need it.</p>
   </section>
+  <section id="audit-section" hidden>
+    <div class="section-head"><strong data-i18n="audit.title">Cookie access audit</strong><button id="refresh-audit" data-i18n="audit.refresh">Refresh</button></div>
+    <div id="audit"><p data-i18n="audit.empty">No access events yet.</p></div>
+  </section>
+  <footer><a href="https://ivjn.us/cookie-sync/privacy/" target="_blank" rel="noopener" data-i18n="link.privacy">Privacy policy</a></footer>
   <script src="i18n.js"></script>
+  <script src="domains.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

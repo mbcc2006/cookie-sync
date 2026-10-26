@@ -1,0 +1,9 @@
+$ cookie-sync pull example.com
+已从 e49e5b9c 保存 example.com 的 1 个 Cookie。
+
+$ cookie-sync pull example.org
+cookie-sync: No message found.
+提示：打开 CookieSync 扩展，在「允许同步的网站」中允许 example.org，然后运行 `cookie-sync wait example.org`。
+
+$ cookie-sync pull example.org
+已从 e49e5b9c 保存 example.org 的 1 个 Cookie。

@@ -1,7 +1,25 @@
-importScripts("i18n.js");
+importScripts("i18n.js", "domains.js");
 
+const D = self.CookieSyncDomains;
 const syncTimers = new Map();
 let deviceSocket;
+
+// Cheap read for hot paths; nothing is read before the user accepts the disclosure.
+async function storedScope() {
+  const { consentVersion = 0, allowedDomains = [], allSites = false } = await chrome.storage.local.get(["consentVersion", "allowedDomains", "allSites"]);
+  if (consentVersion < D.CONSENT_VERSION) return { allowed: [], allSites: false };
+  return { allowed: allowedDomains, allSites };
+}
+
+// What may be synced right now; drops anything the user has since withdrawn in Chrome's site access settings.
+async function syncScope() {
+  const scope = await storedScope();
+  const allSites = scope.allSites && await chrome.permissions.contains({ origins: D.ALL_SITES });
+  const allowed = [];
+  for (const domain of scope.allowed) if (await chrome.permissions.contains({ origins: D.originsFor(domain) })) allowed.push(domain);
+  if (allowed.length !== scope.allowed.length || allSites !== scope.allSites) await chrome.storage.local.set({ allowedDomains: allowed, allSites });
+  return { allowed, allSites };
+}
 
 async function currentLang() {
   const { lang } = await chrome.storage.local.get("lang");
@@ -66,6 +84,8 @@ async function uploadWithRetry(url, options) {
 async function syncDomain(domain) {
   const { relay, deviceId, uploadToken, publicKey } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken", "publicKey"]);
   if (!relay || !deviceId || !uploadToken || !publicKey) return;
+  const scope = await syncScope();
+  if (!scope.allSites && !scope.allowed.includes(domain)) return;
   const cookies = await chrome.cookies.getAll({ domain });
   const envelope = await encrypt(publicKey, { domain, cookies, syncedAt: new Date().toISOString() });
   const metadata = await browserMetadata();
@@ -78,11 +98,17 @@ function schedule(domain) {
   syncTimers.set(domain, setTimeout(() => syncDomain(domain).catch(() => {}), 1500));
 }
 
-async function syncAll() {
+async function syncAll(only) {
   const { relay, deviceId, uploadToken, publicKey } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken", "publicKey"]);
   if (!relay || !deviceId || !uploadToken || !publicKey) return;
-  const cookies = await chrome.cookies.getAll({});
-  const domains = [...new Set(cookies.map((cookie) => cookie.domain.replace(/^\./, "")))];
+  const scope = await syncScope();
+  let domains = scope.allowed;
+  if (scope.allSites) {
+    const cookies = await chrome.cookies.getAll({});
+    domains = [...new Set([...cookies.map((cookie) => cookie.domain.replace(/^\./, "")), ...scope.allowed])];
+  }
+  if (only) domains = domains.filter((domain) => only.includes(domain));
+  if (!domains.length) return;
   const metadata = await browserMetadata();
   for (let index = 0; index < domains.length; index += 20) {
     const messages = await Promise.all(domains.slice(index, index + 20).map(async (domain) => {
@@ -102,10 +128,40 @@ async function decide(requestId, decision) {
   if (!response.ok) throw new Error((await response.json()).error || await t("error.decisionFailed"));
 }
 
+// The CLI asked for sites that are not synced yet; Chrome only grants new sites from a click in an extension page.
+async function promptGrant(domains) {
+  const { pendingDomains = [] } = await chrome.storage.local.get("pendingDomains");
+  await chrome.storage.local.set({ pendingDomains: [...new Set([...pendingDomains, ...domains])] });
+  const lang = await currentLang();
+  const i18n = self.CookieSyncI18n;
+  try {
+    await chrome.notifications.create(`grant:${Date.now()}`, {
+      type: "basic", iconUrl: chrome.runtime.getURL("icon.png"), title: i18n.t(lang, "notify.grantTitle"),
+      message: i18n.t(lang, "notify.grantMessage", { domains: domains.join(", ") }), priority: 2, requireInteraction: true,
+      buttons: [{ title: i18n.t(lang, "notify.grantButton") }]
+    });
+  } catch (error) {
+    console.warn("CookieSync notification unavailable:", error.message);
+  }
+}
+
+async function openGrant(notificationId) {
+  chrome.notifications.clear(notificationId);
+  try {
+    await chrome.action.openPopup();
+  } catch {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });
+  }
+}
+
 async function showAccessRequest(request) {
   const key = `access-notified-${request.id}`;
   if ((await chrome.storage.local.get(key))[key]) return;
   await chrome.storage.local.set({ [key]: true });
+  const scope = await syncScope();
+  // pull-all asks for "*", which means whatever is already allowed.
+  const missing = scope.allSites ? [] : (request.domains || []).filter((domain) => domain !== "*" && !scope.allowed.includes(domain));
+  if (missing.length) await promptGrant(missing);
   const confirm = request.mode === "confirm" && request.status === "pending";
   const lang = await currentLang();
   const i18n = self.CookieSyncI18n;
@@ -152,24 +208,44 @@ async function connectDeviceSocket() {
   };
 }
 
-chrome.cookies.onChanged.addListener(({ cookie }) => schedule(cookie.domain.replace(/^\./, "")));
+chrome.cookies.onChanged.addListener(async ({ cookie }) => {
+  const scope = await storedScope();
+  const covering = D.coveringDomain(cookie.domain, scope.allowed);
+  if (covering) schedule(covering);
+  if (scope.allSites) schedule(cookie.domain.replace(/^\./, ""));
+});
+chrome.permissions.onRemoved.addListener(() => syncScope().catch(() => {}));
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "sync-all") Promise.all([syncAll(), connectDeviceSocket(), pollAccessRequests()]).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: error.message }));
+  if (message.type === "sync-domains") syncAll(message.domains).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: error.message }));
   if (message.type === "open-pair") chrome.action.openPopup().catch(() => {});
   if (message.type === "revoked") { deviceSocket?.close(); deviceSocket = undefined; sendResponse({ ok: true }); }
   return true;
 });
 chrome.runtime.onStartup.addListener(() => syncAll().catch(() => {}));
 chrome.runtime.onStartup.addListener(() => { connectDeviceSocket(); pollAccessRequests(); });
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   chrome.alarms.create("cookie-sync", { periodInMinutes: 15 });
   chrome.alarms.create("cookie-access", { periodInMinutes: 1 });
+  if (reason === "update") {
+    // 0.8.x synced every site after pairing; keep that for existing users while Chrome still grants it.
+    const { allSites } = await chrome.storage.local.get("allSites");
+    if (allSites === undefined) await chrome.storage.local.set({ allSites: await chrome.permissions.contains({ origins: D.ALL_SITES }) });
+  }
+  const { consentVersion = 0 } = await chrome.storage.local.get("consentVersion");
+  if (["install", "update"].includes(reason) && consentVersion < D.CONSENT_VERSION) {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") });
+  }
 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "cookie-sync") syncAll().catch(() => {});
   if (alarm.name === "cookie-access") { pollAccessRequests(); connectDeviceSocket(); }
 });
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId.startsWith("grant:")) openGrant(notificationId);
+});
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (notificationId.startsWith("grant:")) return openGrant(notificationId);
   if (!notificationId.startsWith("access:")) return;
   decide(notificationId.slice(7), buttonIndex === 0 ? "approved" : "denied").finally(() => chrome.notifications.clear(notificationId));
 });

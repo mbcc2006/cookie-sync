@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CookieSync</title>
+  <style>
+    body { font: 15px/1.6 sans-serif; margin: 0; padding: 32px 16px; color: #13251d; background: #fbf8ef; }
+    main { max-width: 640px; margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    header img { width: 40px; height: 40px; }
+    select { font: inherit; padding: 4px 8px; }
+    h1 { font-size: 22px; line-height: 1.35; margin: 20px 0 8px; }
+    ul { padding-left: 20px; }
+    li { margin: 10px 0; }
+    .agree { display: flex; align-items: flex-start; gap: 8px; margin: 20px 0 12px; font-weight: 600; }
+    .agree input { margin-top: 5px; }
+    button { font: inherit; padding: 9px 18px; border: 0; border-radius: 6px; background: #13251d; color: #fbf8ef; cursor: pointer; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    #done { padding: 10px 12px; border-left: 3px solid #4d8f38; background: white; }
+    a { color: #13251d; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icon.png" alt="">
+      <select id="lang" aria-label="Language">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+      </select>
+    </header>
+    <h1 data-i18n="welcome.title">Before you pair: how CookieSync handles your data</h1>
+    <p data-i18n="welcome.intro"></p>
+    <ul>
+      <li data-i18n="welcome.read"></li>
+      <li data-i18n="welcome.protect"></li>
+      <li data-i18n="welcome.relay"></li>
+      <li data-i18n="welcome.audit"></li>
+      <li data-i18n="welcome.remote"></li>
+      <li data-i18n="welcome.control"></li>
+    </ul>
+    <p><a href="https://ivjn.us/cookie-sync/privacy/" target="_blank" rel="noopener" data-i18n="link.privacy">Privacy policy</a></p>
+    <label class="agree"><input type="checkbox" id="agree"><span data-i18n="welcome.agree">I understand and agree</span></label>
+    <button id="continue" disabled data-i18n="welcome.continue">Agree and continue</button>
+    <p id="done" hidden></p>
+  </main>
+  <script src="i18n.js"></script>
+  <script src="domains.js"></script>
+  <script src="welcome.js"></script>
+</body>
+</html>

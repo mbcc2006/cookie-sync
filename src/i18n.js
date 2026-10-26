@@ -165,6 +165,18 @@ const TRANSLATIONS = {
     ja: "メッセージが見つかりません。",
     ko: "메시지를 찾을 수 없습니다."
   },
+  "hint.allowDomain": {
+    en: "Hint: open the CookieSync extension, allow {domain} under \"Sites to sync\", then run `cookie-sync wait {domain}`.",
+    zh: "提示：打开 CookieSync 扩展，在「允许同步的网站」中允许 {domain}，然后运行 `cookie-sync wait {domain}`。",
+    ja: "ヒント：CookieSync 拡張機能を開き、「同期するサイト」で {domain} を許可してから `cookie-sync wait {domain}` を実行してください。",
+    ko: "힌트: CookieSync 확장 프로그램을 열고 '동기화할 사이트'에서 {domain}을(를) 허용한 다음 `cookie-sync wait {domain}`을 실행하세요."
+  },
+  "hint.allowAny": {
+    en: "Hint: the extension only syncs sites listed under \"Sites to sync\" (or every site when \"Sync all sites\" is on). Add a site there first.",
+    zh: "提示：扩展只同步「允许同步的网站」中的网站（打开「同步所有网站」时同步全部）。请先在那里添加网站。",
+    ja: "ヒント：拡張機能は「同期するサイト」に登録したサイトのみ同期します（「すべてのサイトを同期」が有効な場合は全サイト）。先にサイトを追加してください。",
+    ko: "힌트: 확장 프로그램은 '동기화할 사이트'에 있는 사이트만 동기화합니다('모든 사이트 동기화'가 켜져 있으면 전체). 먼저 사이트를 추가하세요."
+  },
   "error.invalidSnapshotFor": {
     en: "Invalid cookie snapshot for {domain}.",
     zh: "{domain} 的 Cookie 快照无效。",

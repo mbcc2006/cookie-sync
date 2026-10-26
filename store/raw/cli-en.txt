@@ -1,0 +1,9 @@
+$ cookie-sync pull example.com
+Saved 1 cookies for example.com from aaa4032b.
+
+$ cookie-sync pull example.org
+cookie-sync: No message found.
+Hint: open the CookieSync extension, allow example.org under "Sites to sync", then run `cookie-sync wait example.org`.
+
+$ cookie-sync pull example.org
+Saved 1 cookies for example.org from aaa4032b.

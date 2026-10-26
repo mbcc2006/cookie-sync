@@ -462,5 +462,8 @@ try {
   else throw new Error(t("error.usage"));
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
+  // Since 0.9 the extension only syncs sites the user allowed, so a missing snapshot usually means "not allowed yet".
+  if (command === "pull" && error.message.includes("No message found")) console.error(t("hint.allowDomain", { domain: value }));
+  if (command === "pull-all" && error.message === t("error.noMessages")) console.error(t("hint.allowAny"));
   process.exitCode = 1;
 }

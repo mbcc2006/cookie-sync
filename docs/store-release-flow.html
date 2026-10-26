@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CookieSync 上架流程</title>
+<style>
+  :root { --bg:#fbf8ef; --card:#fff; --text:#13251d; --muted:#5d6b63; --line:#ddd6c4; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141a17; --card:#1c2420; --text:#e7ece9; --muted:#9aa7a0; --line:#2e3833; } }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+         font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  main { max-width:980px; margin:0 auto; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin:18px 0; }
+  h1 { font-size:24px; margin:0 0 6px; } h2 { font-size:18px; margin:0 0 8px; }
+  p, li { color:var(--muted); } code { font-size:13px; }
+  .mermaid { overflow-x:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CookieSync 上架 Chrome 应用商店：流程</h1>
+  <p>已定：权限模型 B（按域名授权 + 「同步所有网站」开关，默认关闭）；隐私政策放在 ivjn.us。虚线框只剩上架后才能做的 relay CORS 配置。</p>
+
+  <section>
+    <h2>1. 安装与首次配对（新增披露与同意）</h2>
+    <pre class="mermaid">
+flowchart TD
+  I["安装扩展"] --> W["onInstalled 打开说明页 welcome.html<br/>说明：读取哪些 Cookie、端到端加密、经 relay.ivjn.us 中转、<br/>最多保存 7 天、只有 CLI 能解密、可随时撤销、CLI 可让浏览器打开网页"]
+  W --> C{"用户勾选「我已了解并同意」?"}
+  C -->|否| X["不能配对，popup 显示需要先同意"]
+  C -->|是| P["popup 输入配对码"]
+  P --> R["只申请 relay 源的权限"]
+  R --> D["POST /v1/devices 注册设备"]
+  D --> A["popup 显示「允许同步的域名」列表（初始为空）<br/>和「同步所有网站」开关（默认关闭）"]
+    </pre>
+  </section>
+
+  <section>
+    <h2>2. 添加域名、全站开关与同步</h2>
+    <pre class="mermaid">
+flowchart TD
+  U["用户在 popup 输入 github.com 并点「允许」"] --> Q["permissions.request<br/>https://github.com/* 与 https://*.github.com/*"]
+  Q -->|拒绝| N["不加入列表"]
+  Q -->|同意| S["写入 allowedDomains 并立即同步该域名"]
+  E["cookies.onChanged"] --> F{"域名在 allowedDomains 里?"}
+  F -->|否| G{"「同步所有网站」已打开?"}
+  G -->|否| Z["忽略，不读取不上传"]
+  G -->|是| Y
+  F -->|是| Y["1.5 秒防抖后加密上传"]
+  T["每 15 分钟 alarm"] --> L["只同步 allowedDomains 里的域名"]
+  RM["用户移除域名"] --> RP["permissions.remove 并停止同步"]
+  ON["用户打开「同步所有网站」"] --> DS["显示额外说明：会读取所有网站的 Cookie"]
+  DS --> AQ["permissions.request https://*/* 与 http://*/*"]
+  AQ -->|同意| ALL["allSites = true，立即同步全部"]
+  AQ -->|拒绝| OFF["开关保持关闭"]
+  OFFU["用户关闭开关"] --> RA["permissions.remove 全站权限<br/>回到只同步列表中的域名"]
+  UPD["从 0.8.x 升级的老用户"] --> MG["已有全站权限 → 开关保持打开以免中断；<br/>未同意过说明 → 打开说明页，同意前暂停同步"]
+    </pre>
+  </section>
+
+  <section>
+    <h2>3. CLI 读取一个还没授权的域名</h2>
+    <pre class="mermaid">
+flowchart TD
+  CLI["CLI: pull example.com"] --> AR["relay 生成访问请求"]
+  AR --> EXT{"扩展收到请求：域名已授权?"}
+  EXT -->|是| OLD["沿用现有逻辑：通知 / 确认后 CLI 拿到快照"]
+  EXT -->|否| NT["通知：CLI 想读取 example.com，<br/>点击打开扩展授权"]
+  NT --> POP["打开 popup，域名已预填"]
+  POP --> GR["用户点「允许」：申请该域名权限 → 同步"]
+  GR --> W["CLI 用现有的 wait 命令拿到快照<br/>（CLI 提示文案补一句：去扩展里授权该域名）"]
+    </pre>
+  </section>
+
+  <section>
+    <h2>4. 打包与提交</h2>
+    <pre class="mermaid">
+flowchart TD
+  V["版本号改为 0.9.0（扩展与 npm 包一致）"] --> PK["npm run pack:extension<br/>校验 manifest、去掉 key 字段、生成 zip"]
+  PK --> UP["俊然：注册开发者账号（$5、两步验证）→ 上传 zip"]
+  UP --> LS["俊然：按填报稿填写商品详情、隐私权规范、隐私政策链接"]
+  LS --> RV["提交审核"]
+  RV -->|通过| PUB["30 天内点发布 → 得到正式扩展 ID"]
+  RV -->|拒绝| FIX["按拒绝理由修改，重新提交"]
+  PUB --> KEY["把后台给的公钥写进本地 manifest key，开发版与商店版 ID 一致"]
+  PUB --> CORS["relay 的 COOKIE_SYNC_ALLOWED_ORIGINS 加入正式 ID<br/>（需要登录 147.78.245.160，届时单独确认）"]
+  PP["隐私政策：https://ivjn.us/cookie-sync/privacy/"] --> LS
+  style CORS stroke-dasharray: 6 4
+    </pre>
+  </section>
+
+  <section>
+    <h2>待拍板事项</h2>
+    <ol>
+      <li>已定：权限模型 B；隐私政策放在 ivjn.us。</li>
+      <li>上架后：relay 的 CORS 加入正式扩展 ID，需要登录 147.78.245.160，届时单独确认。</li>
+    </ol>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'neutral' });
+</script>
+</body>
+</html>
