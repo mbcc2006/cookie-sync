@@ -84,18 +84,50 @@ function referencedFiles(manifest, dir) {
   return files;
 }
 
+// Every file under dir, as sorted "/"-separated paths (the zip keeps _locales/<code>/messages.json).
+function listFiles(dir, prefix = "") {
+  return fs.readdirSync(path.join(dir, prefix), { withFileTypes: true }).flatMap((entry) => {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    return entry.isDirectory() ? listFiles(dir, rel) : [rel];
+  }).sort();
+}
+
+// The store shows name and description per locale; __MSG_x__ must resolve in the default locale,
+// and every locale's description must fit the 132-character limit.
+function checkLocales(manifest, dir) {
+  const refs = ["name", "description"].map((field) => [field, /^__MSG_(\w+)__$/.exec(manifest[field] || "")?.[1]]);
+  if (!manifest.default_locale) {
+    if (refs.some(([, key]) => key)) throw new Error("__MSG_ placeholders need default_locale.");
+    if ((manifest.description || "").length > 132) throw new Error("manifest description must be 132 characters or fewer.");
+    return;
+  }
+  const localesDir = path.join(dir, "_locales");
+  if (!fs.existsSync(path.join(localesDir, manifest.default_locale, "messages.json"))) {
+    throw new Error(`Missing _locales/${manifest.default_locale}/messages.json for default_locale.`);
+  }
+  for (const locale of fs.readdirSync(localesDir)) {
+    const messages = JSON.parse(fs.readFileSync(path.join(localesDir, locale, "messages.json"), "utf8"));
+    for (const [field, key] of refs) {
+      if (!key) continue;
+      const text = messages[key]?.message;
+      if (locale === manifest.default_locale && !text) throw new Error(`_locales/${locale} is missing "${key}" for ${field}.`);
+      if (field === "description" && text && text.length > 132) throw new Error(`_locales/${locale} description is longer than 132 characters.`);
+    }
+  }
+}
+
 export function packExtension({ dir = path.join(root, "extension"), outDir = path.join(root, "dist"), version } = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
   const expected = version || JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
   if (manifest.manifest_version !== 3) throw new Error("manifest_version must be 3.");
   if (manifest.version !== expected) throw new Error(`manifest version ${manifest.version} does not match package.json ${expected}.`);
-  if ((manifest.description || "").length > 132) throw new Error("manifest description must be 132 characters or fewer.");
   const missing = [...referencedFiles(manifest, dir)].filter((file) => !fs.existsSync(path.join(dir, file)));
   if (missing.length) throw new Error(`Missing files referenced by the extension: ${missing.join(", ")}`);
+  checkLocales(manifest, dir);
 
   // The store assigns the ID; a local "key" (used to pin the dev ID) must not be uploaded.
   delete manifest.key;
-  const entries = fs.readdirSync(dir).filter((name) => fs.statSync(path.join(dir, name)).isFile()).sort()
+  const entries = listFiles(dir)
     .map((name) => [name, name === "manifest.json" ? Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`) : fs.readFileSync(path.join(dir, name))]);
   fs.mkdirSync(outDir, { recursive: true });
   const out = path.join(outDir, `cookie-sync-extension-${manifest.version}.zip`);

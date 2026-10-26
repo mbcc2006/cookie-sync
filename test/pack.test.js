@@ -45,7 +45,25 @@ test("packs the real extension with matching version and no key", () => {
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url)));
   assert.equal(manifest.version, pkg.version);
   assert.equal(manifest.key, undefined);
-  for (const name of ["background.js", "popup.html", "welcome.html", "domains.js", "i18n.js", "icon.png"]) assert.ok(files.includes(name), name);
+  for (const name of ["background.js", "popup.html", "welcome.html", "domains.js", "i18n.js", "icon.png", "_locales/en/messages.json", "_locales/zh_TW/messages.json"]) assert.ok(files.includes(name), name);
+  assert.ok(JSON.parse(entries.get("_locales/en/messages.json")).extDescription.message.length <= 132);
+});
+
+test("checks localized names and descriptions", () => {
+  const base = { manifest_version: 3, name: "__MSG_extName__", version: "1.0.0", description: "__MSG_extDescription__", default_locale: "en", background: { service_worker: "bg.js" } };
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-dist-"));
+  const withLocales = (locales) => {
+    const dir = fixture(base, { "bg.js": "" });
+    for (const [code, description] of Object.entries(locales)) {
+      fs.mkdirSync(path.join(dir, "_locales", code), { recursive: true });
+      fs.writeFileSync(path.join(dir, "_locales", code, "messages.json"), JSON.stringify({ extName: { message: "X" }, extDescription: { message: description } }));
+    }
+    return dir;
+  };
+  const ok = packExtension({ dir: withLocales({ en: "short", fr: "court" }), outDir, version: "1.0.0" });
+  assert.ok(ok.files.includes("_locales/fr/messages.json"));
+  assert.throws(() => packExtension({ dir: withLocales({ en: "short", de: "x".repeat(133) }), outDir, version: "1.0.0" }), /_locales\/de description/);
+  assert.throws(() => packExtension({ dir: withLocales({ fr: "court" }), outDir, version: "1.0.0" }), /_locales\/en\/messages\.json/);
 });
 
 test("strips a local key and rejects version drift and missing files", () => {

@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "Gardez vos navigateurs headless connectés : cookies chiffrés de bout en bout et synchronisés vers votre CookieSync CLI.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

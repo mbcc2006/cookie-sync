@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "Halte Headless-Browser angemeldet: Cookies ausgewählter Websites Ende-zu-Ende verschlüsselt mit deiner CookieSync-CLI abgleichen.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

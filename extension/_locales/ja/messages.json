@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "ヘッドレスブラウザのログインを維持：選んだサイトの Cookie をエンドツーエンドで暗号化し、CookieSync CLI に同期します。",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

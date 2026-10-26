@@ -52,7 +52,7 @@ Chrome + CookieSync extension ──(X25519 + AES-256-GCM)──▶ relay ──
 | `console <domain>` | One-time import from the browser console, without the extension |
 | `export` / `import` | Move a pairing to another machine |
 | `revoke` | Revoke the pairing and its browsers |
-| `lang <code>` | Set the CLI language: `en`, `zh`, `ja` or `ko` |
+| `lang <code>` | Set the CLI language: `en`, `zh`, `zh-hant`, `ja`, `ko`, `es`, `fr`, `de`, `pt`, `ru`, `ar`, `hi`, `id`, `th`, `vi`, `ms`, `tr`, `it` or `nl` (detected from your locale by default) |
 
 Every command that reads cookies accepts `--browser <id or alias>` and `--reason "<why>"`; the reason is shown in the extension's notifications and access log.
 

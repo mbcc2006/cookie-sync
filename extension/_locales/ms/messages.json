@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "Kekalkan pelayar headless log masuk: sulitkan kuki laman pilihan anda secara hujung ke hujung dan segerakkan ke CookieSync CLI.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "헤드리스 브라우저 로그인 유지: 선택한 사이트의 쿠키를 종단 간 암호화해 CookieSync CLI로 동기화합니다.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

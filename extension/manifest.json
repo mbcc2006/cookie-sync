@@ -1,23 +1,38 @@
 {
   "manifest_version": 3,
-  "name": "CookieSync",
+  "name": "__MSG_extName__",
   "version": "0.9.1",
-  "description": "Keep headless browsers signed in: end-to-end encrypt the cookies of sites you choose and sync them to your CookieSync CLI.",
+  "description": "__MSG_extDescription__",
   "icons": {
     "128": "icon.png"
   },
-  "permissions": ["cookies", "storage", "alarms", "notifications"],
+  "permissions": [
+    "cookies",
+    "storage",
+    "alarms",
+    "notifications"
+  ],
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [{
-    "matches": ["https://relay.ivjn.us/*"],
-    "js": ["pair-bridge.js"],
-    "run_at": "document_start"
-  }],
-  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://relay.ivjn.us/*"
+      ],
+      "js": [
+        "pair-bridge.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
   "action": {
     "default_icon": "icon.png",
     "default_popup": "popup.html"
-  }
+  },
+  "default_locale": "en"
 }

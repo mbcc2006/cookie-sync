@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "أبقِ المتصفحات بلا واجهة مسجّلة الدخول: شفّر ملفات تعريف الارتباط للمواقع التي تختارها من طرف إلى طرف وزامنها مع CookieSync CLI.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

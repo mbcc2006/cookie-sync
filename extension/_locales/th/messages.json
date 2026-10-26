@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "ให้เบราว์เซอร์ headless เข้าสู่ระบบค้างไว้: เข้ารหัสคุกกี้ของเว็บไซต์ที่คุณเลือกแบบ end-to-end แล้วซิงค์ไปยัง CookieSync CLI ของคุณ",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

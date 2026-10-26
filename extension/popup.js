@@ -8,6 +8,7 @@ const t = (key, params) => self.CookieSyncI18n.t(lang, key, params);
 
 function applyTranslations() {
   document.documentElement.lang = lang;
+  document.documentElement.dir = self.CookieSyncI18n.RTL.includes(lang) ? "rtl" : "ltr";
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
 }
 
@@ -226,6 +227,8 @@ function showAuthorized(pairedCode) {
 }
 
 (async () => {
+  const { LANGS, NAMES } = self.CookieSyncI18n;
+  $("lang").replaceChildren(...LANGS.map((code) => new Option(NAMES[code], code)));
   lang = await resolveLang();
   $("lang").value = lang;
   applyTranslations();

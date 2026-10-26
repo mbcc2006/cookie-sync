@@ -5,6 +5,7 @@ const t = (key, params) => self.CookieSyncI18n.t(lang, key, params);
 
 function render(consentAt) {
   document.documentElement.lang = lang;
+  document.documentElement.dir = self.CookieSyncI18n.RTL.includes(lang) ? "rtl" : "ltr";
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   if (!consentAt) return;
   $("agree").checked = true;
@@ -15,6 +16,8 @@ function render(consentAt) {
 }
 
 (async () => {
+  const { LANGS, NAMES } = self.CookieSyncI18n;
+  $("lang").replaceChildren(...LANGS.map((code) => new Option(NAMES[code], code)));
   const saved = await chrome.storage.local.get(["lang", "consentVersion", "consentAt"]);
   lang = saved.lang && self.CookieSyncI18n.LANGS.includes(saved.lang) ? saved.lang : self.CookieSyncI18n.detectLang();
   $("lang").value = lang;

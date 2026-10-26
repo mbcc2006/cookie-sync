@@ -9,7 +9,7 @@
     label, input, select, button { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
     button { padding: 8px; }
     #status { white-space: pre-wrap; }
-    .notice { padding: 10px 12px; border-left: 3px solid #d45a34; background: white; }
+    .notice { padding: 10px 12px; border-inline-start: 3px solid #d45a34; background: white; }
     .notice button { width: auto; margin: 8px 0 0; }
     .section-head { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #ccc; margin-top: 16px; padding-top: 12px; }
     .section-head button { width: auto; padding: 5px 9px; margin: 0; }
@@ -18,7 +18,7 @@
     .add-row button { width: auto; flex: none; }
     .domains { list-style: none; margin: 0; padding: 0; }
     .domains li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; margin: 6px 0; background: white; }
-    .domains li.pending { border-left: 3px solid #d45a34; }
+    .domains li.pending { border-inline-start: 3px solid #d45a34; }
     .domains li span { overflow-wrap: anywhere; }
     .domains li small { display: block; color: #66736c; }
     .domains li button { width: auto; flex: none; margin: 0; padding: 4px 9px; }
@@ -26,7 +26,7 @@
     .toggle { display: flex; align-items: center; gap: 8px; }
     .toggle input { width: auto; margin: 0; }
     #audit { max-height: 260px; overflow: auto; margin-top: 8px; }
-    .event { border-left: 3px solid #88958e; padding: 7px 9px; margin: 7px 0; background: white; font-size: 12px; }
+    .event { border-inline-start: 3px solid #88958e; padding: 7px 9px; margin: 7px 0; background: white; font-size: 12px; }
     .event.approved, .event.auto-approved, .event.consumed { border-color: #4d8f38; }
     .event.denied, .event.expired { border-color: #d45a34; }
     .event b, .event time, .event small { display: block; }
@@ -38,12 +38,7 @@
 <body>
   <strong>CookieSync</strong>
   <label><span data-i18n="label.language">Language</span>
-    <select id="lang">
-      <option value="en">English</option>
-      <option value="zh">中文</option>
-      <option value="ja">日本語</option>
-      <option value="ko">한국어</option>
-    </select>
+    <select id="lang"></select>
   </label>
   <div id="consent" class="notice" hidden>
     <span data-i18n="consent.required">Read and accept how CookieSync handles your data before pairing.</span>

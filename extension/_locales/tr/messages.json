@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "Headless tarayıcıların oturumu açık kalsın: seçtiğiniz sitelerin çerezlerini uçtan uca şifreleyip CookieSync CLI'nize aktarın.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}

@@ -10,6 +10,7 @@ function resolveLang() {
 
 function applyTranslations() {
   document.documentElement.lang = lang;
+  document.documentElement.dir = I18N.RTL.includes(lang) ? "rtl" : "ltr";
   document.title = t("meta.title");
   document.getElementById("meta-description").setAttribute("content", t("meta.description"));
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
@@ -41,6 +42,7 @@ document.querySelectorAll(".tabs button").forEach((button) => {
 
 document.getElementById("lang-switch").addEventListener("change", (event) => setLang(event.target.value));
 
+document.getElementById("lang-switch").replaceChildren(...I18N.LANGS.map((code) => new Option(I18N.NAMES[code], code)));
 lang = resolveLang();
 document.getElementById("lang-switch").value = lang;
 applyTranslations();

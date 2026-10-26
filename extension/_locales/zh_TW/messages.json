@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "CookieSync",
+    "description": "Extension name; keep untranslated."
+  },
+  "extDescription": {
+    "message": "讓無頭瀏覽器保持登入：將你選擇的網站 Cookie 進行端對端加密，並同步到你的 CookieSync CLI。",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  }
+}
