@@ -1,14 +1,28 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import test from "node:test";
 import WebSocket from "ws";
 import { encryptFor, generateKeyPair } from "../src/crypto.js";
 import { createRelay } from "../src/relay.js";
 
+// Every relay test runs on the JSON file; with COOKIE_SYNC_TEST_REDIS_URL (e.g. redis://127.0.0.1:6379/15) also on Redis.
+const REDIS_URL = process.env.COOKIE_SYNC_TEST_REDIS_URL;
+const backend = new AsyncLocalStorage();
+function relayTest(name, fn) {
+  for (const kind of ["json", ...(REDIS_URL ? ["redis"] : [])]) {
+    test(`${name} [${kind}]`, (context) => backend.run(kind, () => fn(context)));
+  }
+}
+
 async function startRelay(directory, options = {}) {
-  const relay = createRelay({ dataDirectory: directory, ...options });
+  const redis = backend.getStore() === "redis" ? { redisUrl: REDIS_URL, redisPrefix: `cs-test:${path.basename(directory)}:` } : { redisUrl: "" };
+  const relay = createRelay({ dataDirectory: directory, ...redis, ...options });
+  await relay.storeReady;
   await new Promise((resolve) => relay.listen(0, "127.0.0.1", resolve));
   const { port } = relay.address();
   return { relay, url: `http://127.0.0.1:${port}` };
@@ -20,7 +34,153 @@ async function json(url, path, options) {
   return { response, value };
 }
 
-test("stores an encrypted message and lets only the CLI token retrieve it", async (context) => {
+if (REDIS_URL) {
+  test.after(async () => {
+    const { createClient } = await import("redis");
+    const client = createClient({ url: REDIS_URL });
+    await client.connect();
+    const keys = [];
+    for await (const batch of client.scanIterator({ MATCH: "cs-test:*", COUNT: 500 })) keys.push(...batch);
+    if (keys.length) await client.sendCommand(["DEL", ...keys]);
+    await client.close();
+  });
+}
+
+// A fresh relay with one pair and one claimed browser.
+async function pairedRelay(context, options) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { relay, url } = await startRelay(directory, options);
+  context.after(() => relay.close());
+  const identity = generateKeyPair();
+  const pair = await json(url, "/v1/pairs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicKey: identity.publicKey })
+  });
+  const device = await json(url, "/v1/devices", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pair.value.code })
+  });
+  return {
+    relay, url, identity, directory, pair: pair.value, device: device.value,
+    cliHeaders: { "content-type": "application/json", authorization: `Bearer ${pair.value.readToken}` },
+    deviceHeaders: { "content-type": "application/json", authorization: `Bearer ${device.value.uploadToken}` }
+  };
+}
+
+function rawRequest(url, text) {
+  const { port } = new URL(url);
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(Number(port), "127.0.0.1", () => socket.write(text));
+    let data = "";
+    socket.on("data", (chunk) => { data += chunk; });
+    socket.on("end", () => resolve(data));
+    socket.on("error", reject);
+  });
+}
+
+relayTest("answers malformed URLs and Host headers with 400 and keeps running", async (context) => {
+  const { url } = await pairedRelay(context);
+  const badPath = await rawRequest(url, "GET /v1/pairs/%E0%A4%A HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+  assert.match(badPath, /^HTTP\/1\.1 400/);
+  assert.match(badPath, /"code":"bad_request"/);
+  const badHost = await rawRequest(url, "GET /healthz HTTP/1.1\r\nHost: [\r\nConnection: close\r\n\r\n");
+  assert.match(badHost, /^HTTP\/1\.1 400/);
+  const health = await json(url, "/healthz");
+  assert.equal(health.response.status, 200);
+});
+
+relayTest("tells a browser it was revoked when the CLI deletes the pair", async (context) => {
+  const { url, pair, device, cliHeaders, deviceHeaders } = await pairedRelay(context);
+  const socket = new WebSocket(`${url.replace("http", "ws")}/v1/device/ws?deviceId=${device.deviceId}&token=${device.uploadToken}`);
+  context.after(() => socket.close());
+  await new Promise((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); });
+  const events = [];
+  socket.on("message", (data) => events.push(JSON.parse(data.toString()).type));
+  const closed = new Promise((resolve) => socket.once("close", (code) => resolve(code)));
+
+  assert.equal((await json(url, `/v1/pairs/${pair.code}`, { method: "DELETE", headers: cliHeaders })).response.status, 204);
+  assert.equal(await closed, 4001);
+  assert.ok(events.includes("revoked"));
+  const after = await json(url, `/v1/device/access-requests?deviceId=${device.deviceId}`, { headers: deviceHeaders });
+  assert.equal(after.response.status, 401);
+  assert.equal(after.value.code, "unknown_device");
+});
+
+relayTest("distinguishes a wrong device token from a deleted device", async (context) => {
+  const { url, device, deviceHeaders } = await pairedRelay(context);
+  const wrong = await json(url, `/v1/device/audit?deviceId=${device.deviceId}`, { headers: { authorization: "Bearer wrong" } });
+  assert.equal(wrong.value.code, "invalid_token");
+  const missing = await json(url, "/v1/device/access-requests/00000000-0000-0000-0000-000000000000", {
+    method: "POST", headers: deviceHeaders, body: JSON.stringify({ decision: "approved" })
+  });
+  assert.equal(missing.response.status, 409);
+  assert.equal(missing.value.code, "not_pending");
+});
+
+relayTest("lets an access grant read only once when requests race", async (context) => {
+  const { url, identity, pair, device, cliHeaders, deviceHeaders } = await pairedRelay(context);
+  await json(url, "/v1/messages", {
+    method: "POST", headers: deviceHeaders,
+    body: JSON.stringify({ deviceId: device.deviceId, domain: "relay.ivjn.us", envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] }) })
+  });
+  const access = await json(url, "/v1/access-requests", {
+    method: "POST", headers: cliHeaders, body: JSON.stringify({ code: pair.code, deviceId: device.deviceId, domains: ["relay.ivjn.us"] })
+  });
+  const path = `/v1/messages?code=${pair.code}&deviceId=${device.deviceId}&domain=relay.ivjn.us&accessRequestId=${access.value.id}`;
+  const results = await Promise.all(Array.from({ length: 8 }, () => json(url, path, { headers: cliHeaders })));
+  assert.equal(results.filter((result) => result.response.status === 200).length, 1);
+  assert.ok(results.every((result) => [200, 403].includes(result.response.status)));
+  const missing = await json(url, "/v1/access-requests", {
+    method: "POST", headers: cliHeaders, body: JSON.stringify({ code: pair.code, deviceId: device.deviceId, domains: ["other.example.com"] })
+  });
+  const none = await json(url, `/v1/messages?code=${pair.code}&deviceId=${device.deviceId}&domain=other.example.com&accessRequestId=${missing.value.id}`, { headers: cliHeaders });
+  assert.equal(none.response.status, 404);
+  assert.equal(none.value.code, "no_message");
+});
+
+relayTest("stores only the first of racing Console import uploads", async (context) => {
+  const { url, identity, pair, cliHeaders } = await pairedRelay(context);
+  const session = await json(url, "/v1/imports", { method: "POST", headers: cliHeaders, body: JSON.stringify({ code: pair.code, domain: "relay.ivjn.us" }) });
+  const upload = () => json(url, `/v1/imports/${session.value.id}`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.value.uploadToken}` },
+    body: JSON.stringify({ envelope: encryptFor(identity.publicKey, { domain: "relay.ivjn.us", cookies: [] }) })
+  });
+  const results = await Promise.all(Array.from({ length: 6 }, upload));
+  assert.equal(results.filter((result) => result.response.status === 201).length, 1);
+});
+
+relayTest("imports a pre-0.11 data file and sweeps what expired", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-legacy-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const now = Date.now();
+  const uploadToken = "legacy-upload-token";
+  const uploadTokenHash = crypto.createHash("sha256").update(uploadToken).digest("hex");
+  const legacy = {
+    pairs: [
+      { code: "LIVEPAIR", publicKey: "pk", readToken: "read", expiresAt: now - 1000 },
+      { code: "DEADPAIR", publicKey: "pk", readToken: "read2", expiresAt: now - 1000 }
+    ],
+    devices: [{ id: "dev-1", code: "LIVEPAIR", uploadTokenHash, alias: "Laptop", note: "", accessPolicy: "confirm", metadata: {}, createdAt: now - 5000, lastSeenAt: now - 5000 }],
+    messages: [{ id: "msg-1", code: "LIVEPAIR", deviceId: "dev-1", domain: "relay.ivjn.us", envelope: { x: 1 }, createdAt: now - 4000, expiresAt: now + 60_000 }],
+    imports: [],
+    accessRequests: [{ id: "acc-1", code: "LIVEPAIR", deviceId: "dev-1", domains: ["relay.ivjn.us"], status: "pending", mode: "confirm", createdAt: now - 3000, expiresAt: now - 1000 }],
+    auditEvents: [{ id: "aud-1", deviceId: "dev-1", requestId: "acc-1", action: "requested", createdAt: now - 3000 }],
+    pushSubscriptions: []
+  };
+  fs.writeFileSync(path.join(directory, "messages.json"), JSON.stringify(legacy));
+  const { relay, url } = await startRelay(directory);
+  context.after(() => relay.close());
+
+  const devices = await json(url, "/v1/devices?code=LIVEPAIR", { headers: { authorization: "Bearer read" } });
+  assert.deepEqual(devices.value.devices.map((device) => device.alias), ["Laptop"]);
+  await relay.sweep();
+  const audit = await json(url, "/v1/device/audit?deviceId=dev-1", { headers: { authorization: `Bearer ${uploadToken}` } });
+  assert.deepEqual(audit.value.events.map((event) => event.action), ["expired", "requested"]);
+  assert.equal((await json(url, "/v1/devices?code=DEADPAIR", { headers: { authorization: "Bearer read2" } })).value.code, "unknown_pair");
+  assert.equal((await json(url, "/v1/devices?code=LIVEPAIR", { headers: { authorization: "Bearer read" } })).response.status, 200);
+  if (backend.getStore() === "json") assert.ok(fs.existsSync(path.join(directory, "messages.json.v1.bak")));
+});
+
+relayTest("stores an encrypted message and lets only the CLI token retrieve it", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -91,7 +251,7 @@ test("stores an encrypted message and lets only the CLI token retrieve it", asyn
   assert.equal(reused.response.status, 403);
 });
 
-test("lets a device revoke its own authorization but not with another device's token", async (context) => {
+relayTest("lets a device revoke its own authorization but not with another device's token", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -132,7 +292,7 @@ test("lets a device revoke its own authorization but not with another device's t
   assert.equal(policyAfterRevoke.response.status, 401);
 });
 
-test("returns a masked pair code only to its authorized device", async (context) => {
+relayTest("returns a masked pair code only to its authorized device", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-device-status-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -160,7 +320,7 @@ test("returns a masked pair code only to its authorized device", async (context)
   assert.equal(unauthorized.response.status, 401);
 });
 
-test("permits configured extension origins and rejects other CORS preflights", async (context) => {
+relayTest("permits configured extension origins and rejects other CORS preflights", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   const previous = process.env.COOKIE_SYNC_ALLOWED_ORIGINS;
   process.env.COOKIE_SYNC_ALLOWED_ORIGINS = "chrome-extension://approved";
@@ -180,7 +340,7 @@ test("permits configured extension origins and rejects other CORS preflights", a
   assert.equal(denied.status, 403);
 });
 
-test("keeps claimed upload devices across relay restarts", async (context) => {
+relayTest("keeps claimed upload devices across relay restarts", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const first = await startRelay(directory);
@@ -203,7 +363,7 @@ test("keeps claimed upload devices across relay restarts", async (context) => {
   assert.equal(upload.response.status, 201);
 });
 
-test("rate limits pair creation by client IP", async (context) => {
+relayTest("rate limits pair creation by client IP", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const limits = {
@@ -223,7 +383,7 @@ test("rate limits pair creation by client IP", async (context) => {
   assert.ok(Number(limited.headers.get("retry-after")) > 0);
 });
 
-test("rate limits uploads per device token instead of sharing an IP bucket", async (context) => {
+relayTest("rate limits uploads per device token instead of sharing an IP bucket", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-upload-limit-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const limits = {
@@ -252,7 +412,7 @@ test("rate limits uploads per device token instead of sharing an IP bucket", asy
   assert.equal((await upload(second, "second.example.com")).status, 201);
 });
 
-test("stores a validated batch of encrypted snapshots in one request", async (context) => {
+relayTest("stores a validated batch of encrypted snapshots in one request", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-batch-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -288,7 +448,7 @@ test("stores a validated batch of encrypted snapshots in one request", async (co
   assert.deepEqual(listed.value.messages.map((message) => message.domain).sort(), ["first.example.com", "second.example.com"]);
 });
 
-test("isolates same-domain snapshots by browser and emits websocket updates", async (context) => {
+relayTest("isolates same-domain snapshots by browser and emits websocket updates", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -328,7 +488,7 @@ test("isolates same-domain snapshots by browser and emits websocket updates", as
   }
 });
 
-test("requires browser approval when confirmation policy is enabled", async (context) => {
+relayTest("requires browser approval when confirmation policy is enabled", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -361,7 +521,7 @@ test("requires browser approval when confirmation policy is enabled", async (con
   assert.equal((await json(url, messagePath, { headers: cliHeaders })).response.status, 200);
 });
 
-test("accepts and consumes an encrypted console import exactly once", async (context) => {
+relayTest("accepts and consumes an encrypted console import exactly once", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -386,7 +546,7 @@ test("accepts and consumes an encrypted console import exactly once", async (con
   assert.equal((await json(url, importPath, { headers: readHeaders })).response.status, 401);
 });
 
-test("serves a no-store pairing page only for valid pair codes", async (context) => {
+relayTest("serves a no-store pairing page only for valid pair codes", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -405,7 +565,7 @@ test("serves a no-store pairing page only for valid pair codes", async (context)
   assert.match(await invalid.text(), /无效或已过期/);
 });
 
-test("serves a locked-down same-origin Console upload page", async (context) => {
+relayTest("serves a locked-down same-origin Console upload page", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -422,7 +582,7 @@ test("serves a locked-down same-origin Console upload page", async (context) => 
   assert.equal(html.includes("console-import.js"), false);
 });
 
-test("provides an isolated metadata-only access audit to each browser", async (context) => {
+relayTest("provides an isolated metadata-only access audit to each browser", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -457,7 +617,7 @@ test("provides an isolated metadata-only access audit to each browser", async (c
   assert.equal(access.value.deviceId, first.value.deviceId);
 });
 
-test("bounds access reasons and returns Console import reasons", async (context) => {
+relayTest("bounds access reasons and returns Console import reasons", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);
@@ -481,7 +641,7 @@ test("bounds access reasons and returns Console import reasons", async (context)
   assert.equal(session.value.reason, "Temporary migration");
 });
 
-test("sends authenticated open URL commands only to an online device", async (context) => {
+relayTest("sends authenticated open URL commands only to an online device", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-relay-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const { relay, url } = await startRelay(directory);

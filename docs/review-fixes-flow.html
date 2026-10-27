@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CookieSync 修复流程</title>
+<style>
+  :root { --bg: #f4f0e6; --card: #fbf8ef; --ink: #13251d; --muted: #52645a; --accent: #c9ff45; --warn: #a43b1c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.7 ui-sans-serif, system-ui, "Noto Sans SC", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 40px 0 8px; padding-top: 12px; border-top: 1px solid var(--ink); }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  section { background: var(--card); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--accent); padding: 18px 20px; margin: 18px 0; }
+  .mermaid { background: #fff; border: 1px dashed #b8c2bb; padding: 12px; overflow-x: auto; }
+  code { font: 13px ui-monospace, monospace; background: #eef0e6; padding: 1px 5px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border: 1px solid #c8cfc9; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #eef0e6; }
+  .pending { border-left: 4px dashed var(--warn); padding-left: 12px; }
+  ul { padding-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CookieSync 修复流程图</h1>
+  <p class="sub">2026-10-27 · 对应 review 的 #1、#3–#10，以及性能、可维护性、站点、Redis 几项（#2 按决定不修）。虚线框是需要俊然拍板或单独同意的节点。</p>
+
+  <h2>1. relay 请求入口：兜底不崩（#1）</h2>
+  <section>
+    <p>HTTP handler 和 upgrade handler 外面各包一层兜底。解析 URL 或路径解码失败时返回 400，其他异常记日志并返回 500，进程不会退出。请求体读到一半断开时直接结束这次请求。</p>
+    <div class="mermaid">
+flowchart TD
+  A[收到请求] --> B{new URL / decodeURIComponent<br>能解析?}
+  B -- 否 --> C[400 bad_request]
+  B -- 是 --> D[限流]
+  D --> E[路由 handler]
+  E -- 抛异常 --> F[console.error + 500 internal]
+  E -- 正常 --> G[响应]
+  U[WS upgrade] --> UB{URL 能解析且鉴权通过?}
+  UB -- 否 --> UD[socket.destroy]
+  UB -- 是 --> UE[handleUpgrade<br>maxPayload 64KB + 30 秒 ping]
+    </div>
+  </section>
+
+  <h2>2. 存储后端选择（Redis 主存储）</h2>
+  <section>
+    <p>relay 启动时按环境变量选后端。两个后端实现同一组<strong>异步</strong>接口，handler 不关心底层是哪个。<code>redis</code> 包只在设置了 URL 时才动态加载，CLI 用户不用加载它。</p>
+    <div class="mermaid">
+flowchart TD
+  S[createRelay 启动] --> R{COOKIE_SYNC_REDIS_URL<br>是否设置?}
+  R -- 是 --> RD[动态 import redis<br>连接 Redis]
+  RD --> RS[RedisStore]
+  R -- 否 --> JS[JsonStore<br>内存 Map + 1 秒合并写<br>SIGTERM/SIGINT 前强制刷盘]
+  RS --> H[handlers 统一 await store.*]
+  JS --> H
+    </div>
+    <p><strong>Redis key 设计</strong>（前缀 <code>cs:</code>，值是 JSON 字符串）：</p>
+    <table>
+      <tr><th>数据</th><th>key</th><th>过期策略</th></tr>
+      <tr><td>配对</td><td><code>cs:pair:{code}</code></td><td>不设 TTL。还有设备、消息、导入引用它时不能删，由清扫任务判断</td></tr>
+      <tr><td>设备</td><td><code>cs:device:{id}</code>，索引 <code>cs:pair:{code}:devices</code>（set）</td><td>不过期</td></tr>
+      <tr><td>快照消息</td><td><code>cs:msg:{id}</code>，最新指针 <code>cs:latest:{deviceId}:{domain}</code>，索引 <code>cs:pair:{code}:msgs</code>（zset）</td><td>EXPIRE 7 天；索引里指向已过期 key 的条目在读取时顺手清掉</td></tr>
+      <tr><td>Console 导入</td><td><code>cs:import:{id}</code>，索引 <code>cs:pair:{code}:imports</code></td><td>EXPIRE 5 分钟</td></tr>
+      <tr><td>访问请求</td><td><code>cs:access:{id}</code>，到期队列 <code>cs:access:exp</code>（zset）</td><td>由清扫任务处理，到期时要写一条「expired」审计，所以不用 EXPIRE</td></tr>
+      <tr><td>审计</td><td><code>cs:audit:{deviceId}</code>（list，LPUSH + LTRIM 500）</td><td>保留 90 天，读取和清扫时过滤</td></tr>
+      <tr><td>推送订阅</td><td><code>cs:pair:{code}:push</code>（hash，以 endpoint 去重）</td><td>随配对一起删除</td></tr>
+    </table>
+    <p><strong>一次性语义必须是原子的</strong>，否则并发时同一个访问授权可能被消费两次。所有「读一条记录、判断、再改写」的操作，都走一个 Lua 写成的 CAS 函数（GET 出来比较旧值，相同才 SET，并保留 TTL），冲突就重试：</p>
+    <div class="mermaid">
+flowchart LR
+  A[update key, fn] --> B[GET 旧值]
+  B --> C[fn 旧值 → 新值<br>不满足条件则返回 null]
+  C -- null --> X[按业务返回 403/409]
+  C -- 新值 --> D[Lua: 当前值 == 旧值 ?<br>SET 新值 KEEPTTL]
+  D -- 成功 --> OK[完成]
+  D -- 冲突 --> B
+    </div>
+    <p>用到 CAS 的场景：访问请求 consume（设置 <code>usedAt</code>）、approve/deny 决定、Console 导入上传信封（一次性 token）、更新设备资料和策略。</p>
+  </section>
+
+  <h2>3. 导出取数：relay 没有新快照时回退到本地（#5、#6）</h2>
+  <section>
+    <p><code>cookies</code> / <code>playwright</code> 跟 <code>browse</code> / <code>yt-dlp</code> 改成一样的处理。relay 返回 <code>no_message</code> 时，改用本地上一次保存的快照，并在 stderr 提示这份快照的同步时间。注意：这种情况下扩展的审计记录只有「请求、批准」，没有「已读取」，因为数据并没有从 relay 读出来。</p>
+    <div class="mermaid">
+flowchart TD
+  A[cookies / playwright domain] --> B[申请访问授权<br>提示信息走 stderr]
+  B --> C[GET /v1/messages]
+  C -- 200 --> D[解密 → 写本地快照 → DELETE 消息]
+  C -- 404 code=no_message --> E{本地有快照?}
+  E -- 有 --> F[stderr 提示: 使用本地快照<br>同步于 syncedAt]
+  E -- 没有 --> G[报错 + 提示去扩展里允许该网站]
+  D --> H[输出]
+  F --> H
+  H --> I{有 --out?}
+  I -- 有 --> J[写文件，提示走 stdout]
+  I -- 没有 --> K[stdout 只输出数据]
+    </div>
+  </section>
+
+  <h2>4. 撤销通知链路（#8）</h2>
+  <section>
+    <p>CLI 撤销配对后，relay 主动通知并断开扩展。扩展只在 401 响应里带有明确的 <code>code</code>（<code>device_revoked</code> 或 <code>unknown_device</code>）时才清除凭据，避免 relay 临时故障导致所有用户被解除配对。</p>
+    <div class="mermaid">
+flowchart TD
+  A[CLI revoke] --> B[DELETE /v1/pairs/:code]
+  B --> C[删除配对、设备、消息、导入、访问请求、审计、推送订阅]
+  C --> D[向该配对下的设备 WS 推送 revoked 并关闭]
+  C --> E[关闭该配对的 CLI WS]
+  D --> F[扩展收到 revoked]
+  G[扩展上传/轮询收到 401] --> H{body.code 是<br>device_revoked / unknown_device?}
+  H -- 是 --> F
+  H -- 否 --> I[保留凭据，下次重试]
+  F --> J[清除 deviceId/uploadToken/publicKey<br>弹出通知「已被 CLI 撤销」<br>弹窗回到未配对状态]
+    </div>
+  </section>
+
+  <h2>5. 扩展同步与 WS（#3、性能）</h2>
+  <section>
+    <div class="mermaid">
+flowchart TD
+  A[syncAll] --> B[收集域名]
+  B --> C[normalizeDomain 过滤<br>去掉 IP / localhost / 非法域名]
+  C --> D[每 20 个一批上传]
+  D -- 某批失败 --> E[记下错误，继续下一批]
+  D --> F[全部结束后，如有失败再抛出]
+  W[alarm 每分钟] --> X{deviceSocket 是 OPEN<br>或 CONNECTING?}
+  X -- 是 --> Y[不动]
+  X -- 否 --> Z[重新连接<br>onclose 时清空引用]
+  N[已通知的访问请求] --> M[合并成一个带时间戳的 map<br>超过 1 天的自动清除]
+    </div>
+    <p>每 15 分钟的全量重传保持不变，这是俊然拍板的。</p>
+  </section>
+
+  <h2>6. 字体镜像到 R2</h2>
+  <section>
+    <div class="mermaid">
+flowchart TD
+  A[脚本 scripts/mirror-fonts.mjs] --> B[用现代 Chrome UA 请求 Google css2<br>Noto Sans SC/TC/JP/KR + IBM Plex Mono]
+  B --> C[解析出所有 woff2 切片 URL]
+  C --> D[下载到 dist-fonts/，按内容 hash 命名]
+  D --> P[[统计文件数和总大小，向俊然报告]]
+  P --> E[先传 1 个文件，验证 content-type 和 CORS]
+  E --> F[并发上传到 ivjn/cookie-sync/fonts/<br>cache-control immutable 一年]
+  D --> G[生成 site/fonts.css，同源提供<br>src 指向 https://r2.ivjn.us/cookie-sync/fonts/]
+  G --> H[styles.css 用 :lang 选字体<br>ja → JP, ko → KR, zh-Hant → TC, 其余 → SC]
+  H --> I[CSP: font-src https://r2.ivjn.us<br>去掉 fonts.googleapis.com]
+  style P stroke-dasharray: 6 4,stroke:#a43b1c
+    </div>
+  </section>
+
+  <h2>7. 提交与上线顺序</h2>
+  <section>
+    <p>按俊然的指示直接在 <code>main</code> 上提交。每个提交单独都能跑通测试，最后统一 push 一次。push 之后的服务器操作，每一步都要单独征得同意。</p>
+    <div class="mermaid">
+flowchart TD
+  A[a 崩溃兜底 + 测试] --> B[b 存储抽象 + JsonStore<br>行为不变，全部测试通过]
+  B --> C[c RedisStore + 原子 CAS + 迁移脚本<br>WSL Redis 实测]
+  C --> D[d CLI 修复]
+  D --> E[e 扩展修复]
+  E --> F[f 站点与字体]
+  F --> G[g 文档和 19 种语言文案]
+  G --> H[npm test 全绿 → push main]
+  H --> S1[[SSH 只读侦察: relay 怎么跑的、有没有 Redis]]
+  S1 --> S2[[SSH 安装 redis-server<br>只监听 127.0.0.1，开 AOF]]
+  S2 --> S3[[部署新代码到备用端口<br>跑迁移脚本，messages.json 原样保留]]
+  S3 --> S4[[healthz + 鉴权读取验证 → 切换 → 观察]]
+  style S1 stroke-dasharray: 6 4,stroke:#a43b1c
+  style S2 stroke-dasharray: 6 4,stroke:#a43b1c
+  style S3 stroke-dasharray: 6 4,stroke:#a43b1c
+  style S4 stroke-dasharray: 6 4,stroke:#a43b1c
+    </div>
+  </section>
+
+  <h2>待拍板 / 需单独同意的事项</h2>
+  <section class="pending">
+    <ul>
+      <li>本地测 Redis：WSL 里如果没有 redis-server，需要俊然用 <code>! wsl sudo apt install -y redis-server</code> 装一下（要输入 sudo 密码）。</li>
+      <li>字体：下载完先报告文件数和体积，俊然确认后再上传 R2（预计 1000 个以上文件、可能超过 100MB）。</li>
+      <li>服务器四步（侦察、装 Redis、部署加迁移、切换），每一步动手前都会先说明连哪台、跑什么命令，等您同意。</li>
+      <li>站点 <code>deploy:site</code>、npm 发版、扩展上架都不在这次范围内，除非您另外吩咐。</li>
+    </ul>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { htmlLabels: true } });</script>
+</body>
+</html>
