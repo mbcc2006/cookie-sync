@@ -1,6 +1,6 @@
 {
   "name": "@ivjnus/cookie-sync",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Keep headless browsers signed in: end-to-end encrypted cookie sync from Chrome to a CLI, Playwright, curl and yt-dlp",
   "license": "MIT",
   "author": "mbcc2006",

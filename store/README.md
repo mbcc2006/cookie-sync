@@ -1,8 +1,8 @@
-# Chrome Web Store submission kit (CookieSync 0.9.0)
+# Chrome Web Store submission kit (CookieSync 0.11.0)
 
 Everything the Developer Dashboard asks for, in the order it asks. Keep this file, the extension behaviour and the privacy policy in agreement: the store removes items whose Privacy tab contradicts either.
 
-- Package: `npm run pack:extension` → `dist/cookie-sync-extension-0.9.0.zip`
+- Package: `npm run pack:extension` → `dist/cookie-sync-extension-0.11.0.zip`
 - Privacy policy: https://ivjn.us/cookie-sync/privacy/ (source: `ivjnus/src/privacy-cookie-sync.mjs`)
 - Images: `store/images/` (rebuild with `python store/make_assets.py` after an end-to-end capture)
 
