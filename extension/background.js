@@ -1,7 +1,10 @@
-importScripts("i18n.js", "domains.js");
+importScripts("i18n.js", "domains.js", "metadata.js");
 
 const D = self.CookieSyncDomains;
+const { browserMetadata } = self.CookieSyncMetadata;
 const syncTimers = new Map();
+const PAIRING_KEYS = ["deviceId", "uploadToken", "publicKey", "accessPolicy", "pendingPair", "pairedCode"];
+const NOTIFIED_TTL_MS = 24 * 60 * 60 * 1000;
 let deviceSocket;
 
 // Cheap read for hot paths; nothing is read before the user accepts the disclosure.
@@ -32,18 +35,6 @@ async function t(key, params) {
   return self.CookieSyncI18n.t(await currentLang(), key, params);
 }
 
-async function browserMetadata() {
-  const data = navigator.userAgentData;
-  const details = data?.getHighEntropyValues ? await data.getHighEntropyValues(["architecture", "bitness", "fullVersionList", "platformVersion"]) : {};
-  const brands = details.fullVersionList || data?.brands || [];
-  return {
-    userAgent: navigator.userAgent, platform: data?.platform || navigator.platform || "",
-    os: [data?.platform || navigator.platform, details.platformVersion].filter(Boolean).join(" "),
-    architecture: [details.architecture, details.bitness].filter(Boolean).join(" "),
-    browser: brands.map((item) => `${item.brand} ${item.version}`).join(", "), language: navigator.language
-  };
-}
-
 function base64(bytes) {
   let value = "";
   for (const byte of bytes) value += String.fromCharCode(byte);
@@ -71,6 +62,31 @@ async function encrypt(publicKeyPem, snapshot) {
   return { ephemeralPublicKey: `-----BEGIN PUBLIC KEY-----\n${base64(spki)}\n-----END PUBLIC KEY-----`, iv: base64(iv), ciphertext: base64(encrypted.slice(0, -16)), tag: base64(encrypted.slice(-16)) };
 }
 
+// The pairing was deleted on the relay (the CLI ran revoke): forget it, as the popup's revoke button does.
+async function forgetPairing() {
+  const { deviceId } = await chrome.storage.local.get("deviceId");
+  if (!deviceId) return;
+  await chrome.storage.local.remove(PAIRING_KEYS);
+  deviceSocket?.close();
+  deviceSocket = undefined;
+  const lang = await currentLang();
+  const i18n = self.CookieSyncI18n;
+  try {
+    await chrome.notifications.create(`revoked:${Date.now()}`, {
+      type: "basic", iconUrl: chrome.runtime.getURL("icon.png"), title: i18n.t(lang, "notify.revokedTitle"), message: i18n.t(lang, "notify.revokedMessage"), priority: 1
+    });
+  } catch (error) {
+    console.warn("CookieSync notification unavailable:", error.message);
+  }
+}
+
+// Reads a relay error. Only unknown_device means the pairing is gone; any other 401 may be a passing relay problem.
+async function relayError(response, fallbackKey) {
+  const value = await response.json().catch(() => ({}));
+  if (response.status === 401 && value.code === "unknown_device") await forgetPairing();
+  return new Error(value.error || await t(fallbackKey));
+}
+
 async function uploadWithRetry(url, options) {
   let response = await fetch(url, options);
   if (response.status === 429) {
@@ -78,7 +94,7 @@ async function uploadWithRetry(url, options) {
     await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
     response = await fetch(url, options);
   }
-  if (!response.ok) throw new Error((await response.json()).error || await t("error.uploadFailed"));
+  if (!response.ok) throw await relayError(response, "error.uploadFailed");
   return response;
 }
 
@@ -106,19 +122,29 @@ async function syncAll(only) {
   let domains = scope.allowed;
   if (scope.allSites) {
     const cookies = await chrome.cookies.getAll({});
-    domains = [...new Set([...cookies.map((cookie) => cookie.domain.replace(/^\./, "")), ...scope.allowed])];
+    domains = [...new Set([...cookies.map((cookie) => cookie.domain.replace(/^\./, "").toLowerCase()), ...scope.allowed])];
   }
   if (only) domains = domains.filter((domain) => only.includes(domain));
+  // One localhost or IP cookie would make the relay reject its whole batch.
+  domains = domains.filter(D.isSyncable);
   if (!domains.length) return;
   const metadata = await browserMetadata();
+  let failure;
   for (let index = 0; index < domains.length; index += 20) {
     const messages = await Promise.all(domains.slice(index, index + 20).map(async (domain) => {
       const domainCookies = await chrome.cookies.getAll({ domain });
       return { domain, envelope: await encrypt(publicKey, { domain, cookies: domainCookies, syncedAt: new Date().toISOString() }) };
     }));
     const options = { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ deviceId, messages, metadata }) };
-    await uploadWithRetry(`${relay}/v1/messages/batch`, options);
+    // A failed batch should not hold back the ones after it; report the first failure at the end.
+    try {
+      await uploadWithRetry(`${relay}/v1/messages/batch`, options);
+    } catch (error) {
+      failure ??= error;
+      if (!(await chrome.storage.local.get("deviceId")).deviceId) break;
+    }
   }
+  if (failure) throw failure;
 }
 
 async function decide(requestId, decision) {
@@ -126,7 +152,7 @@ async function decide(requestId, decision) {
   const response = await fetch(`${relay}/v1/device/access-requests/${requestId}`, {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${uploadToken}` }, body: JSON.stringify({ decision })
   });
-  if (!response.ok) throw new Error((await response.json()).error || await t("error.decisionFailed"));
+  if (!response.ok) throw await relayError(response, "error.decisionFailed");
 }
 
 // The CLI asked for sites that are not synced yet; Chrome only grants new sites from a click in an extension page.
@@ -155,10 +181,18 @@ async function openGrant(notificationId) {
   }
 }
 
+// Remembers which access requests were shown, for a day, so polling and the WebSocket do not notify twice.
+async function markNotified(id) {
+  const { notifiedRequests = {} } = await chrome.storage.local.get("notifiedRequests");
+  if (notifiedRequests[id]) return false;
+  const now = Date.now();
+  const kept = Object.fromEntries(Object.entries(notifiedRequests).filter(([, at]) => now - at < NOTIFIED_TTL_MS));
+  await chrome.storage.local.set({ notifiedRequests: { ...kept, [id]: now } });
+  return true;
+}
+
 async function showAccessRequest(request) {
-  const key = `access-notified-${request.id}`;
-  if ((await chrome.storage.local.get(key))[key]) return;
-  await chrome.storage.local.set({ [key]: true });
+  if (!(await markNotified(request.id))) return;
   const scope = await syncScope();
   // pull-all asks for "*", which means whatever is already allowed.
   const requested = request.domains || [];
@@ -185,20 +219,29 @@ async function pollAccessRequests() {
   const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
   if (!relay || !deviceId || !uploadToken) return;
   const response = await fetch(`${relay}/v1/device/access-requests?deviceId=${encodeURIComponent(deviceId)}`, { headers: { authorization: `Bearer ${uploadToken}` } });
-  if (!response.ok) return;
+  if (!response.ok) return void await relayError(response, "error.uploadFailed");
   for (const request of (await response.json()).requests) await showAccessRequest(request);
 }
 
 async function connectDeviceSocket() {
   const { relay, deviceId, uploadToken } = await chrome.storage.local.get(["relay", "deviceId", "uploadToken"]);
   if (!relay || !deviceId || !uploadToken) return;
+  // The alarm calls this every minute; a live connection stays, so open-url commands are not lost while reconnecting.
+  if (deviceSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(deviceSocket.readyState)) return;
   const url = new URL("/v1/device/ws", relay);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("deviceId", deviceId); url.searchParams.set("token", uploadToken);
-  deviceSocket?.close();
-  deviceSocket = new WebSocket(url);
-  deviceSocket.onmessage = async (event) => {
-    const message = JSON.parse(event.data);
+  const socket = new WebSocket(url);
+  deviceSocket = socket;
+  socket.onclose = () => { if (deviceSocket === socket) deviceSocket = undefined; };
+  socket.onmessage = async (event) => {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (message.type === "revoked") return forgetPairing();
     if (message.type === "access-request") return showAccessRequest({ id: message.requestId, ...message });
     if (message.type !== "open-url") return;
     try {
@@ -216,7 +259,8 @@ chrome.cookies.onChanged.addListener(async ({ cookie }) => {
   const scope = await storedScope();
   const covering = D.coveringDomain(cookie.domain, scope.allowed);
   if (covering) schedule(covering);
-  if (scope.allSites) schedule(cookie.domain.replace(/^\./, ""));
+  const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+  if (scope.allSites && D.isSyncable(domain)) schedule(domain);
 });
 chrome.permissions.onRemoved.addListener(() => syncScope().catch(() => {}));
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -235,6 +279,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     // 0.8.x synced every site after pairing; keep that for existing users while Chrome still grants it.
     const { allSites } = await chrome.storage.local.get("allSites");
     if (allSites === undefined) await chrome.storage.local.set({ allSites: await chrome.permissions.contains({ origins: D.ALL_SITES }) });
+    // Before 0.11 every shown access request left its own key behind.
+    const stale = Object.keys(await chrome.storage.local.get(null)).filter((key) => key.startsWith("access-notified-"));
+    if (stale.length) await chrome.storage.local.remove(stale);
   }
   const { consentVersion = 0 } = await chrome.storage.local.get("consentVersion");
   if (["install", "update"].includes(reason) && consentVersion < D.CONSENT_VERSION) {

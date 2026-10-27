@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const D = self.CookieSyncDomains;
+const { browserMetadata } = self.CookieSyncMetadata;
 const status = (message) => { $("status").textContent = message; };
 const maskPairCode = (code) => code.length > 9 ? `${code.slice(0, 4)}...${code.slice(-4)}` : code;
 
@@ -114,20 +115,6 @@ async function setAllSites(on) {
     status(t("allSites.off"));
   }
   await renderDomains();
-}
-
-async function browserMetadata() {
-  const data = navigator.userAgentData;
-  const details = data?.getHighEntropyValues ? await data.getHighEntropyValues(["architecture", "bitness", "fullVersionList", "platformVersion"]) : {};
-  const brands = details.fullVersionList || data?.brands || [];
-  return {
-    userAgent: navigator.userAgent,
-    platform: data?.platform || navigator.platform || "",
-    os: [data?.platform || navigator.platform, details.platformVersion].filter(Boolean).join(" "),
-    architecture: [details.architecture, details.bitness].filter(Boolean).join(" "),
-    browser: brands.map((item) => `${item.brand} ${item.version}`).join(", "),
-    language: navigator.language
-  };
 }
 
 async function connect() {
@@ -270,6 +257,12 @@ $("add-form").addEventListener("submit", (event) => {
 $("all-sites").addEventListener("change", () => setAllSites($("all-sites").checked).catch((error) => status(t("status.errorPrefix", { message: error.message }))));
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.allowedDomains || changes.pendingDomains || changes.allSites) renderDomains();
+  // The background forgot the pairing because the CLI revoked it.
+  if (changes.deviceId && !changes.deviceId.newValue && !$("revoke").hidden) {
+    showUnauthorized();
+    $("sync").disabled = false;
+    status(t("status.revokedRemotely"));
+  }
 });
 
 $("lang").addEventListener("change", () => setLang($("lang").value));

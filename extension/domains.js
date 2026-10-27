@@ -26,5 +26,10 @@
     return allowed.find((entry) => domain === entry || domain.endsWith(`.${entry}`)) || null;
   }
 
-  global.CookieSyncDomains = { ALL_SITES, CONSENT_VERSION, normalizeDomain, originsFor, coveringDomain };
+  // Only names the relay accepts can be synced: no IP addresses, localhost or other single-label hosts.
+  function isSyncable(domain) {
+    return normalizeDomain(domain) === domain;
+  }
+
+  global.CookieSyncDomains = { ALL_SITES, CONSENT_VERSION, DOMAIN_PATTERN, normalizeDomain, isSyncable, originsFor, coveringDomain };
 })(typeof self !== "undefined" ? self : this);

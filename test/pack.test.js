@@ -45,7 +45,7 @@ test("packs the real extension with matching version and no key", () => {
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url)));
   assert.equal(manifest.version, pkg.version);
   assert.equal(manifest.key, undefined);
-  for (const name of ["background.js", "popup.html", "welcome.html", "domains.js", "i18n.js", "icon.png", "_locales/en/messages.json", "_locales/zh_TW/messages.json"]) assert.ok(files.includes(name), name);
+  for (const name of ["background.js", "popup.html", "welcome.html", "domains.js", "metadata.js", "i18n.js", "icon.png", "_locales/en/messages.json", "_locales/zh_TW/messages.json"]) assert.ok(files.includes(name), name);
   assert.ok(JSON.parse(entries.get("_locales/en/messages.json")).extDescription.message.length <= 132);
 });
 
