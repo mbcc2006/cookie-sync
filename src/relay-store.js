@@ -126,9 +126,27 @@ return 0`;
 
 async function createRedisStore(url, { prefix = "cs:", legacyFile } = {}) {
   const { createClient } = await import("redis");
-  const client = createClient({ url });
-  client.on("error", (error) => console.error("CookieSync relay Redis error:", error.message));
-  await client.connect();
+  // Without the offline queue, requests during a Redis outage fail at once (503) instead of hanging until it returns.
+  const client = createClient({ url, disableOfflineQueue: true });
+  let lastError = "";
+  client.on("error", (error) => {
+    if (error.message !== lastError) console.error("CookieSync relay Redis error:", error.message);
+    lastError = error.message;
+  });
+  client.on("ready", () => { lastError = ""; });
+  // Fail start-up instead of waiting forever, so the process manager restarts the relay and the outage is visible.
+  let timer;
+  try {
+    await Promise.race([
+      client.connect(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Redis at ${new URL(url).host} did not answer within 10 seconds.`)), 10_000); })
+    ]);
+  } catch (error) {
+    client.destroy();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   const command = (args) => client.sendCommand(args.map(String));
   const key = (kind, id) => `${prefix}${kind}:${id}`;
   const zKey = (name) => `${prefix}z:${name}`;

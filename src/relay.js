@@ -691,6 +691,9 @@ export function createRelay({
     } catch (error) {
       if (response.headersSent) return response.destroy();
       if (error instanceof HttpError) return send(response, error.status, { error: error.message, code: error.code }, origin, error.headers);
+      if (/Redis|Client(Closed|Offline)|client is (closed|offline)|ECONNREFUSED|ECONNRESET/i.test(`${error.constructor?.name} ${error.name} ${error.message}`)) {
+        return send(response, 503, { error: "Relay storage is temporarily unavailable.", code: "storage_unavailable" }, origin, { "retry-after": "5" });
+      }
       console.error("CookieSync relay request failed:", error);
       send(response, 500, { error: "Internal relay error.", code: "internal" }, origin);
     }
