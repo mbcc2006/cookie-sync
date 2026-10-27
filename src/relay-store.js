@@ -161,7 +161,8 @@ async function createRedisStore(url, { prefix = "cs:", legacyFile } = {}) {
       return (await command(["MGET", ...ids.map((id) => key(kind, id))])).map(parse).filter(Boolean);
     },
     async set(kind, id, value) { await command(["SET", key(kind, id), JSON.stringify(value)]); },
-    async swap(kind, id, value) { return parse(await command(["SET", key(kind, id), JSON.stringify(value), "GET"])); },
+    // GETSET rather than SET ... GET, which needs Redis 6.2.
+    async swap(kind, id, value) { return parse(await command(["GETSET", key(kind, id), JSON.stringify(value)])); },
     async delete(kind, id) { await command(["DEL", key(kind, id)]); },
     async update(kind, id, fn) {
       for (let attempt = 0; attempt < 20; attempt += 1) {
