@@ -4,32 +4,78 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
-import { chromium } from "playwright-core";
 import WebSocket from "ws";
 import { consoleImportUrl } from "./console.js";
 import { toNetscapeCookies } from "./cookies.js";
 import { decryptFrom, generateKeyPair } from "./crypto.js";
+import { isDomain } from "./domain.js";
 import { resolveLang, setLang, t } from "./i18n.js";
 import { chromeLaunchArgs, findChrome } from "./platform.js";
 import { toPlaywrightCookie, toPlaywrightStorageState } from "./playwright.js";
 import { readJson, stateDirectory, writePrivateJson } from "./store.js";
 
 const relay = process.env.COOKIE_SYNC_RELAY || "https://relay.ivjn.us";
-const CLI_VERSION = "0.8.2";
+const CLI_VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+
+// Progress and status lines; they move to stderr when stdout carries exported cookies.
+let progress = console.log;
 
 function normalizeDomain(domain) {
   const value = domain?.trim().toLowerCase();
-  if (!value || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(value)) {
-    throw new Error(t("error.invalidDomain"));
-  }
+  if (!isDomain(value)) throw new Error(t("error.invalidDomain"));
   return value;
 }
 
 async function request(path, options = {}) {
   const response = await fetch(`${relay}${path}`, options);
-  const value = response.status === 204 ? undefined : await response.json();
-  if (!response.ok) throw new Error(value?.error || t("error.requestFailed", { status: response.status }));
+  const text = response.status === 204 ? "" : await response.text();
+  let value;
+  try {
+    value = text ? JSON.parse(text) : undefined;
+  } catch {
+    value = undefined;
+  }
+  if (!response.ok) {
+    const error = new Error(value?.error || t("error.requestFailed", { status: response.status }));
+    // Relays before 0.11 send only the English message, so match on that as well.
+    error.code = value?.code || (value?.error === "No message found." ? "no_message" : value?.error?.includes("has not been uploaded") ? "import_pending" : undefined);
+    error.status = response.status;
+    throw error;
+  }
   return value;
+}
+
+// Pushes relay events to onEvent; if the WebSocket cannot connect, callers simply keep polling over HTTP.
+function relayEvents(code, readToken, onEvent) {
+  const url = new URL("/v1/ws", relay);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("code", code);
+  url.searchParams.set("token", readToken);
+  let socket;
+  try {
+    socket = new WebSocket(url);
+  } catch {
+    return { close() {} };
+  }
+  socket.on("error", () => {});
+  socket.on("message", (data) => {
+    try {
+      onEvent(JSON.parse(data.toString()));
+    } catch {}
+  });
+  return { close: () => socket.terminate() };
+}
+
+// Resolves after ms, or earlier when wake() is called.
+function sleeper() {
+  let wake = () => {};
+  return {
+    wake: () => wake(),
+    sleep: (ms) => new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      wake = () => { clearTimeout(timer); resolve(); };
+    })
+  };
 }
 
 function credentials() {
@@ -94,34 +140,23 @@ async function requestBrowserAccess(browser, domains, reason) {
     })
   });
   if (access.status === "approved") return access.id;
-  console.log(t("info.waitingApproval", { browser: browser.alias || browser.id.slice(0, 8) }));
-  const wsUrl = new URL("/v1/ws", relay);
-  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-  wsUrl.searchParams.set("code", code);
-  wsUrl.searchParams.set("token", readToken);
-  let wake;
-  let socket;
+  progress(t("info.waitingApproval", { browser: browser.alias || browser.id.slice(0, 8) }));
+  const timer = sleeper();
+  const events = relayEvents(code, readToken, (event) => {
+    if (event.type === "access-decision" && event.requestId === access.id) timer.wake();
+  });
   try {
-    socket = new WebSocket(wsUrl);
-    socket.on("message", (data) => {
-      try {
-        const event = JSON.parse(data.toString());
-        if (event.type === "access-decision" && event.requestId === access.id) wake?.();
-      } catch {}
-    });
-  } catch {}
-  while (Date.now() < access.expiresAt) {
-    const current = await request(`/v1/access-requests/${encodeURIComponent(access.id)}?code=${encodeURIComponent(code)}`, {
-      headers: { authorization: `Bearer ${readToken}` }
-    });
-    if (current.status === "approved") { socket?.close(); return access.id; }
-    if (current.status === "denied") { socket?.close(); throw new Error(t("error.accessDenied")); }
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, 3000);
-      wake = () => { clearTimeout(timer); resolve(); };
-    });
+    while (Date.now() < access.expiresAt) {
+      const current = await request(`/v1/access-requests/${encodeURIComponent(access.id)}?code=${encodeURIComponent(code)}`, {
+        headers: { authorization: `Bearer ${readToken}` }
+      });
+      if (current.status === "approved") return access.id;
+      if (current.status === "denied") throw new Error(t("error.accessDenied"));
+      await timer.sleep(3000);
+    }
+  } finally {
+    events.close();
   }
-  socket?.close();
   throw new Error(t("error.approvalTimeout"));
 }
 
@@ -162,7 +197,32 @@ async function pull(domain, browserSelector, reason) {
   await request(`/v1/messages/${encodeURIComponent(message.id)}`, {
     method: "DELETE", headers: { authorization: `Bearer ${readToken}` }
   });
-  console.log(t("info.savedCookies", { count: snapshot.cookies.length, domain, browser: browser.alias || browser.id.slice(0, 8) }));
+  progress(t("info.savedCookies", { count: snapshot.cookies.length, domain, browser: browser.alias || browser.id.slice(0, 8) }));
+}
+
+// The newest snapshot for a command that uses cookies: pulled from the browser when the relay has one, otherwise the
+// copy an earlier pull saved (the relay deletes a snapshot once it is pulled; the browser uploads it again later).
+async function snapshotFor(domain, browserDevice, reason) {
+  const file = browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`;
+  if (browserDevice) {
+    try {
+      await pull(domain, browserDevice.id, reason);
+    } catch (error) {
+      if (error.code !== "no_message") throw error;
+      let saved;
+      try {
+        saved = readJson(file);
+      } catch {
+        throw error;
+      }
+      if (!Array.isArray(saved.cookies)) throw new Error(t("error.invalidSnapshot"));
+      console.error(t("info.usingLocalSnapshot", { domain, time: saved.syncedAt || "?" }));
+      return saved;
+    }
+  }
+  const snapshot = readJson(file);
+  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
+  return snapshot;
 }
 
 async function pullAll(browserSelector, reason) {
@@ -252,7 +312,7 @@ async function consoleImport(domain, reason) {
       console.log(t("info.consoleSaved", { count: snapshot.cookies.length, domain }));
       return;
     } catch (error) {
-      if (!error.message.includes("has not been uploaded")) throw error;
+      if (error.code !== "import_pending") throw error;
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
@@ -266,52 +326,35 @@ async function waitForSnapshot(domain, timeoutSeconds, browserSelector, reason) 
   const seconds = Number(timeoutSeconds || 300);
   if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 3600) throw new Error(t("error.timeoutRange"));
   const deadline = Date.now() + seconds * 1000;
-  console.log(t("info.waitingFor", { seconds, domain, browser: browser.alias || browser.id.slice(0, 8) }));
-  const wsUrl = new URL("/v1/ws", relay);
-  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-  wsUrl.searchParams.set("code", code);
-  wsUrl.searchParams.set("token", readToken);
-  let wake;
-  let socket;
+  progress(t("info.waitingFor", { seconds, domain, browser: browser.alias || browser.id.slice(0, 8) }));
+  const timer = sleeper();
+  const events = relayEvents(code, readToken, (event) => {
+    if (event.type === "cookie-update" && event.browserId === browser.id && event.domain === domain) timer.wake();
+  });
   try {
-    socket = new WebSocket(wsUrl);
-    socket.on("message", (data) => {
+    while (Date.now() < deadline) {
       try {
-        const event = JSON.parse(data.toString());
-        if (event.type === "cookie-update" && event.browserId === browser.id && event.domain === domain) wake?.();
-      } catch {}
-    });
-  } catch {}
-  while (Date.now() < deadline) {
-    try {
-      await pull(domain, browser.id, reason || t("reason.wait", { domain }));
-      socket?.close();
-      return;
-    } catch (error) {
-      if (!error.message.includes("No message found.")) throw error;
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 5000);
-        wake = () => { clearTimeout(timer); resolve(); };
-      });
+        await pull(domain, browser.id, reason || t("reason.wait", { domain }));
+        return;
+      } catch (error) {
+        if (error.code !== "no_message") throw error;
+        await timer.sleep(5000);
+      }
     }
+  } finally {
+    events.close();
   }
-  socket?.close();
   throw new Error(t("error.waitTimeout", { domain }));
 }
 
 async function browse(url, browserSelector, reason) {
   const domain = new URL(url).hostname;
   const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
-  if (browserDevice) {
-    try {
-      await pull(domain, browserDevice.id, reason || t("reason.browse", { url }));
-    } catch (error) {
-      if (!error.message.includes("No message found")) throw error;
-    }
-  }
-  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
+  const snapshot = await snapshotFor(domain, browserDevice, reason || t("reason.browse", { url }));
   const executablePath = findChrome();
   if (!executablePath || !fs.existsSync(executablePath)) throw new Error(t("error.chromeNotFound"));
+  // playwright-core is large and only this command needs it.
+  const { chromium } = await import("playwright-core");
   const browser = await chromium.launch({ executablePath, headless: true, args: chromeLaunchArgs() });
   try {
     const context = await browser.newContext({
@@ -330,9 +373,7 @@ async function browse(url, browserSelector, reason) {
 async function playwright(domain, outFile, browserSelector, reason) {
   domain = normalizeDomain(domain);
   const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
-  if (browserDevice) await pull(domain, browserDevice.id, reason || t("reason.playwright", { domain }));
-  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
-  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
+  const snapshot = await snapshotFor(domain, browserDevice, reason || t("reason.playwright", { domain }));
   const file = outFile || "playwright-state.json";
   fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(toPlaywrightStorageState(snapshot), null, 2)}\n`, { mode: 0o600 });
@@ -342,12 +383,12 @@ async function playwright(domain, outFile, browserSelector, reason) {
 
 async function exportCookies(domain, format, outFile, browserSelector, reason) {
   domain = normalizeDomain(domain);
-  const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
-  if (browserDevice) await pull(domain, browserDevice.id, reason || t("reason.cookies", { domain }));
-  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
-  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
   format = format || "json";
   if (!new Set(["json", "txt"]).has(format)) throw new Error(t("error.cookieFormat"));
+  // Without --out, stdout is the cookie file itself.
+  if (!outFile) progress = console.error;
+  const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
+  const snapshot = await snapshotFor(domain, browserDevice, reason || t("reason.cookies", { domain }));
   const output = format === "txt"
     ? toNetscapeCookies(snapshot.cookies)
     : `${JSON.stringify(snapshot.cookies, null, 2)}\n`;
@@ -368,15 +409,7 @@ async function ytDlp(url, executable, browserSelector, reason, domainOverride, p
   if (!["http:", "https:"].includes(target.protocol)) throw new Error(t("error.invalidUrl"));
   const domain = normalizeDomain(domainOverride || target.hostname.replace(/^www\./, ""));
   const browserDevice = browserSelector === "console" ? null : await resolveBrowser(browserSelector);
-  if (browserDevice) {
-    try {
-      await pull(domain, browserDevice.id, reason || t("reason.ytDlp", { domain }));
-    } catch (error) {
-      if (!error.message.includes("No message found")) throw error;
-    }
-  }
-  const snapshot = readJson(browserDevice ? `cookies-${browserDevice.id}-${domain}.json` : `cookies-console-${domain}.json`);
-  if (!Array.isArray(snapshot.cookies)) throw new Error(t("error.invalidSnapshot"));
+  const snapshot = await snapshotFor(domain, browserDevice, reason || t("reason.ytDlp", { domain }));
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cookie-sync-yt-dlp-"));
   const cookieFile = path.join(directory, "cookies.txt");
   try {
@@ -489,7 +522,7 @@ try {
 } catch (error) {
   console.error(`cookie-sync: ${error.message}`);
   // Since 0.9 the extension only syncs sites the user allowed, so a missing snapshot usually means "not allowed yet".
-  if (command === "pull" && error.message.includes("No message found")) console.error(t("hint.allowDomain", { domain: value }));
+  if (error.code === "no_message" && ["pull", "cookies", "playwright"].includes(command)) console.error(t("hint.allowDomain", { domain: value }));
   if (command === "pull-all" && error.message === t("error.noMessages")) console.error(t("hint.allowAny"));
   process.exitCode = 1;
 }

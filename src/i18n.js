@@ -591,6 +591,27 @@ const TRANSLATIONS = {
     it: "Suggerimento: apri l'estensione CookieSync, consenti {domain} in “Siti da sincronizzare”, poi esegui `cookie-sync wait {domain}`.",
     nl: "Tip: open de CookieSync-extensie, sta {domain} toe onder “Te synchroniseren sites” en voer daarna `cookie-sync wait {domain}` uit."
   },
+  "info.usingLocalSnapshot": {
+    en: "No newer snapshot of {domain} on the relay; using the one saved locally (synced {time}). The browser audit lists this request as approved but not read.",
+    zh: "relay 上没有 {domain} 的新快照，改用本地保存的快照（同步于 {time}）。浏览器审计会显示这次请求已批准但未读取。",
+    "zh-hant": "relay 上沒有 {domain} 的新快照，改用本機儲存的快照（同步於 {time}）。瀏覽器稽核會顯示這次請求已核准但未讀取。",
+    ja: "relay に {domain} の新しいスナップショットがないため、ローカルに保存したもの（{time} に同期）を使います。ブラウザーの監査ログでは、このリクエストは承認済み・未読み取りと表示されます。",
+    ko: "relay에 {domain}의 새 스냅샷이 없어 로컬에 저장된 스냅샷({time} 동기화)을 사용합니다. 브라우저 감사 기록에는 이 요청이 승인됨, 읽지 않음으로 표시됩니다.",
+    es: "No hay una instantánea más reciente de {domain} en el relay; se usa la guardada localmente (sincronizada el {time}). La auditoría del navegador mostrará esta solicitud como aprobada pero no leída.",
+    fr: "Aucun instantané plus récent de {domain} sur le relais ; utilisation de celui enregistré localement (synchronisé le {time}). L'audit du navigateur indiquera cette demande comme approuvée mais non lue.",
+    de: "Kein neuerer Snapshot von {domain} auf dem Relay; der lokal gespeicherte wird verwendet (synchronisiert am {time}). Im Browser-Audit erscheint diese Anfrage als genehmigt, aber nicht gelesen.",
+    pt: "Não há um snapshot mais recente de {domain} no relay; usando o salvo localmente (sincronizado em {time}). A auditoria do navegador mostrará esta solicitação como aprovada, mas não lida.",
+    ru: "На relay нет более нового снимка {domain}; используется локально сохранённый (синхронизирован {time}). В журнале браузера этот запрос будет отмечен как одобренный, но не прочитанный.",
+    ar: "لا توجد لقطة أحدث لـ {domain} على الـ relay؛ سيتم استخدام اللقطة المحفوظة محليًا (تمت مزامنتها في {time}). سيعرض سجل تدقيق المتصفح هذا الطلب كموافق عليه لكن غير مقروء.",
+    hi: "relay पर {domain} का कोई नया स्नैपशॉट नहीं है; स्थानीय रूप से सहेजा गया स्नैपशॉट ({time} को सिंक) उपयोग किया जा रहा है। ब्राउज़र ऑडिट में यह अनुरोध स्वीकृत लेकिन न पढ़ा गया दिखेगा।",
+    id: "Tidak ada snapshot {domain} yang lebih baru di relay; memakai yang tersimpan secara lokal (disinkronkan {time}). Audit browser akan menampilkan permintaan ini sebagai disetujui tetapi tidak dibaca.",
+    th: "ไม่มีสแนปช็อตใหม่ของ {domain} บน relay จึงใช้สแนปช็อตที่บันทึกไว้ในเครื่อง (ซิงค์เมื่อ {time}) บันทึกการตรวจสอบของเบราว์เซอร์จะแสดงคำขอนี้ว่าอนุมัติแล้วแต่ยังไม่ได้อ่าน",
+    vi: "Relay không có ảnh chụp mới hơn của {domain}; dùng bản đã lưu cục bộ (đồng bộ lúc {time}). Nhật ký kiểm tra của trình duyệt sẽ ghi yêu cầu này là đã duyệt nhưng chưa đọc.",
+    ms: "Tiada petikan {domain} yang lebih baharu pada relay; menggunakan yang disimpan secara setempat (disegerakkan {time}). Audit pelayar akan menunjukkan permintaan ini sebagai diluluskan tetapi tidak dibaca.",
+    tr: "Relay üzerinde {domain} için daha yeni bir anlık görüntü yok; yerel olarak kaydedilen kullanılıyor ({time} tarihinde senkronize edildi). Tarayıcı denetiminde bu istek onaylandı ama okunmadı olarak görünecek.",
+    it: "Nessuno snapshot più recente di {domain} sul relay; viene usato quello salvato in locale (sincronizzato il {time}). Nell'audit del browser questa richiesta risulterà approvata ma non letta.",
+    nl: "Geen nieuwere snapshot van {domain} op de relay; de lokaal opgeslagen versie wordt gebruikt (gesynchroniseerd op {time}). De browseraudit toont dit verzoek als goedgekeurd maar niet gelezen."
+  },
   "hint.allowAny": {
     en: "Hint: the extension only syncs sites listed under \"Sites to sync\" (or every site when \"Sync all sites\" is on). Add a site there first.",
     zh: "提示：扩展只同步「允许同步的网站」中的网站（打开「同步所有网站」时同步全部）。请先在那里添加网站。",

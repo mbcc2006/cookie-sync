@@ -3,8 +3,9 @@ import path from "node:path";
 
 export function defaultStateDirectory({ platform = process.platform, env = process.env, home = env.HOME || "." } = {}) {
   if (platform === "win32") return path.win32.join(env.APPDATA || path.win32.join(home, "AppData", "Roaming"), "cookie-sync");
-  if (platform === "darwin") return path.join(home, "Library", "Application Support", "cookie-sync");
-  return path.join(env.XDG_STATE_HOME || path.join(home, ".local", "state"), "cookie-sync");
+  // The platform argument, not the host running the code, decides the separator (tests run every branch anywhere).
+  if (platform === "darwin") return path.posix.join(home, "Library", "Application Support", "cookie-sync");
+  return path.posix.join(env.XDG_STATE_HOME || path.posix.join(home, ".local", "state"), "cookie-sync");
 }
 
 export function findChrome({ platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
