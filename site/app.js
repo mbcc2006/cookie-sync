@@ -1,7 +1,12 @@
 // Pages are prerendered per language; the language menu is plain links, so this file only adds conveniences.
 document.querySelectorAll("[data-copy]").forEach((button) => {
   button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(button.dataset.copy);
+    // Clipboard access can be refused (insecure context, permissions); leave the label alone then.
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+    } catch {
+      return;
+    }
     const original = button.textContent;
     button.textContent = button.dataset.copied;
     setTimeout(() => { button.textContent = original; }, 1400);

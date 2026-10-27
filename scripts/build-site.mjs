@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Build cookie-sync.ivjn.us for Cloudflare Pages: one prerendered page per language plus SEO and agent files.
 // Usage: npm run build:site   (output: dist-site/)
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,11 +16,22 @@ const PRIVACY = "https://ivjn.us/cookie-sync/privacy/";
 const GITHUB = "https://github.com/mbcc2006/cookie-sync";
 const NPM = "https://www.npmjs.com/package/@ivjnus/cookie-sync";
 const HREFLANG = { zh: "zh-Hans", "zh-hant": "zh-Hant" };
+// Self-hosted Google Fonts (scripts/mirror-fonts.mjs): every page loads mono and the sans family for its script.
+const FONT_HOST = "https://r2.ivjn.us";
+const SANS_FONT = { "zh-hant": "tc", ja: "jp", ko: "kr" };
+const FONT_SHEETS = ["fonts-mono.css", "fonts-sc.css", "fonts-tc.css", "fonts-jp.css", "fonts-kr.css"];
+const ASSETS = ["styles.css", "app.js", ...FONT_SHEETS];
 const OG_LOCALE = { en: "en_US", zh: "zh_CN", "zh-hant": "zh_TW", ja: "ja_JP", ko: "ko_KR", es: "es_ES", fr: "fr_FR", de: "de_DE", pt: "pt_BR", ru: "ru_RU", ar: "ar_AR", hi: "hi_IN", id: "id_ID", th: "th_TH", vi: "vi_VN", ms: "ms_MY", tr: "tr_TR", it: "it_IT", nl: "nl_NL" };
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const hreflang = (code) => HREFLANG[code] || code;
 const pathFor = (code) => (code === "en" ? "/" : `/${code}/`);
+const versioned = (file, assets) => `/${file}${assets[file] ? `?v=${assets[file]}` : ""}`;
+
+function fontLinks(code, assets) {
+  return [`<link rel="preconnect" href="${FONT_HOST}" crossorigin>`, ...["fonts-mono.css", `fonts-${SANS_FONT[code] || "sc"}.css`]
+    .map((file) => `<link rel="stylesheet" href="${versioned(file, assets)}">`)].join("\n  ");
+}
 
 function loadI18n() {
   const sandbox = { window: {} };
@@ -90,7 +102,8 @@ export function renderPage(template, I, code, pkg, assets = {}) {
     .replace(/<html lang="[^"]*">/, `<html lang="${hreflang(code)}" dir="${I.RTL.includes(code) ? "rtl" : "ltr"}" data-lang="${code}">`)
     .replace(/(<meta name="description" id="meta-description" content=")[^"]*(")/, `$1${esc(I.t(code, "meta.description"))}$2`)
     .replace(/(<title id="page-title">)[^<]*(<\/title>)/, `$1${esc(I.t(code, "meta.title"))}$2`)
-    .replace(/(href|src)="(styles\.css|app\.js)"/g, (_, attr, file) => `${attr}="/${file}${assets[file] ? `?v=${assets[file]}` : ""}"`)
+    .replace(/(href|src)="(styles\.css|app\.js)"/g, (_, attr, file) => `${attr}="${versioned(file, assets)}"`)
+    .replace("{{fonts}}", fontLinks(code, assets))
     .replace("{{langMenu}}", langMenu(I, code))
     .replace(/data-copy="/g, `data-copied="${esc(I.t(code, "copy.copied"))}" data-copy="`)
     .replace(/(<([a-zA-Z0-9]+)\b[^>]*\bdata-i18n="([^"]+)"[^>]*>)[^<]*(<\/\2>)/g, (_, open, tag, key, close) => {
@@ -137,8 +150,17 @@ Current CLI version: ${pkg.version}. The site is published in ${I.LANGS.length} 
 `;
 }
 
+// The day the page content last changed (its last commit), not the build date, so search engines can trust lastmod.
+function lastModified() {
+  try {
+    const day = execFileSync("git", ["log", "-1", "--format=%cs", "--", "site", "scripts/build-site.mjs", "README.md", "skills"], { cwd: root, encoding: "utf8" }).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+  } catch {}
+  return new Date().toISOString().slice(0, 10);
+}
+
 function sitemap(I) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = lastModified();
   const alts = I.LANGS.map((c) => `<xhtml:link rel="alternate" hreflang="${hreflang(c)}" href="${ORIGIN}${pathFor(c)}"/>`).join("")
     + `<xhtml:link rel="alternate" hreflang="x-default" href="${ORIGIN}/"/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -168,7 +190,16 @@ const HEADERS = `/*
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src ${FONT_HOST}; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/styles.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/app.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts-*
+  Cache-Control: public, max-age=31536000, immutable
 
 /llms.txt
   Content-Type: text/plain; charset=utf-8
@@ -191,7 +222,7 @@ const HEADERS = `/*
   Cache-Control: public, max-age=86400
 `;
 
-const NOT_FOUND = `<!doctype html>
+const notFound = (assets) => `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -199,7 +230,7 @@ const NOT_FOUND = `<!doctype html>
   <meta name="robots" content="noindex">
   <title>Page not found - CookieSync</title>
   <link rel="icon" type="image/png" href="/favicon.png">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="${versioned("styles.css", assets)}">
 </head>
 <body>
   <main class="wrap" style="min-height:70vh;display:flex;flex-direction:column;justify-content:center;gap:16px">
@@ -220,9 +251,10 @@ export function buildSite(out = path.join(root, "dist-site")) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, content);
   };
-  const assets = Object.fromEntries(["styles.css", "app.js"].map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(site, f))).digest("hex").slice(0, 10)]));
+  const assets = Object.fromEntries(ASSETS.map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(site, f))).digest("hex").slice(0, 10)]));
   for (const code of I.LANGS) write(path.join(pathFor(code), "index.html"), renderPage(template, I, code, pkg, assets));
-  for (const f of ["styles.css", "i18n.js", "app.js", "og.png"]) fs.copyFileSync(path.join(site, f), path.join(out, f));
+  // site/i18n.js only feeds this build; the pages are prerendered and never load it.
+  for (const f of [...ASSETS, "og.png"]) fs.copyFileSync(path.join(site, f), path.join(out, f));
   fs.copyFileSync(path.join(root, "extension", "icon.png"), path.join(out, "favicon.png"));
   const skill = fs.readFileSync(path.join(root, "skills", "cookie-sync", "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8").replace(/\r\n/g, "\n");
@@ -232,7 +264,7 @@ export function buildSite(out = path.join(root, "dist-site")) {
   write("sitemap.xml", sitemap(I));
   write("robots.txt", ROBOTS);
   write("_headers", HEADERS);
-  write("404.html", NOT_FOUND);
+  write("404.html", notFound(assets));
   return { out, pages: I.LANGS.length };
 }
 

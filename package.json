@@ -22,6 +22,7 @@
     "prepublishOnly": "npm test",
     "pack:extension": "node scripts/pack-extension.mjs",
     "build:site": "node scripts/build-site.mjs",
+    "fonts:mirror": "node scripts/mirror-fonts.mjs --upload",
     "deploy:site": "npm run build:site && npx wrangler@4 deploy"
   },
   "repository": {
