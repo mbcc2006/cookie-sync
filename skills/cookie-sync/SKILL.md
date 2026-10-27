@@ -56,12 +56,15 @@ cookie-sync wait github.com --timeout 300 --reason "Run the nightly report as th
 
 Exported files contain credentials and are written owner-only; keep them out of version control (for example `playwright/.auth/` in `.gitignore`).
 
+These commands pull a fresh snapshot when the relay has one. Right after an earlier pull the relay copy is gone, so they reuse the locally saved snapshot and print `using the one saved locally (synced ...)` on stderr; that is expected, not an error. Without `--out`, `cookies` prints only the cookies on stdout, so it can be piped.
+
 ## Troubleshooting
 
 | Message | What to do |
 |---|---|
 | `No message found` | Site not allowed or not uploaded yet: ask the user to allow it, then `cookie-sync wait <domain>` |
 | `No authorized browsers found` | Pair the extension: `cookie-sync pair` |
+| `Relay storage is temporarily unavailable` | Relay-side outage: retry after a few seconds |
 | `Multiple browsers found` | Add `--browser <ID prefix or alias>`; see `cookie-sync browsers` |
 | Access denied / approval timed out | The user declined or did not answer; stop and report |
 | `fetch failed` | Relay unreachable; check the network or `COOKIE_SYNC_RELAY` |

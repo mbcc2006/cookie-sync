@@ -95,6 +95,12 @@ npm start
 
 Set `PORT` to change the listener port and `COOKIE_SYNC_RELAY_DATA` to change the encrypted-message directory. The CLI and extension default to `https://relay.ivjn.us`; set `COOKIE_SYNC_RELAY` only to use another relay.
 
+By default the relay keeps its data in `messages.json` in that directory and writes it at most once a second (and on `SIGTERM`/`SIGINT`). Relays before 0.11 used another layout; the first start converts the file and keeps the original as `messages.json.v1.bak`.
+
+To store the data in Redis 6.2 or later instead, set `COOKIE_SYNC_REDIS_URL` (for example `redis://127.0.0.1:6379/0`; `COOKIE_SYNC_REDIS_PREFIX` defaults to `cs:`). On its first start against an empty Redis the relay imports `messages.json` from the data directory once and leaves the file untouched for rollback. One-time grants and import tokens are consumed atomically, so several requests racing for the same grant cannot all succeed. If Redis cannot be reached at start-up the relay exits after 10 seconds; while Redis is down, requests get `503` with `"code": "storage_unavailable"` and service resumes on its own. `GET /healthz` reports the storage in use.
+
+Relay errors carry a stable `code` next to the English `error` message (for example `no_message`, `access_required`, `unknown_device`). Clients should branch on `code`.
+
 The default CORS policy permits every extension origin so unpacked extensions work during development. In production, set the Chrome extension ID after loading it once:
 
 ```bash
@@ -170,7 +176,9 @@ npx @ivjnus/cookie-sync yt-dlp "https://www.youtube.com/watch?v=VIDEO_ID" --brow
 
 CookieSync refreshes the Cookie snapshot, writes a private temporary Netscape file, passes it to `yt-dlp`, and removes it when the process exits. Arguments after `--` are passed directly to `yt-dlp`. Use `--yt-dlp /path/to/yt-dlp` for a non-default executable, or `--domain youtube.com` when the Cookie domain cannot be inferred from the URL.
 
-Omit `--out` to print the result to stdout. The format defaults to `json`; `--browser` and `--reason` work the same way as with `pull`.
+Omit `--out` to print the result to stdout; progress messages then go to stderr, so `cookies github.com > cookies.json` writes a clean file. The format defaults to `json`; `--browser` and `--reason` work the same way as with `pull`.
+
+The relay deletes a snapshot once it is pulled, and the extension uploads it again when the site's cookies change and every 15 minutes. If `cookies`, `playwright`, `browse` or `yt-dlp` finds no newer snapshot on the relay, it uses the copy saved by the last pull and says so on stderr, including when that copy was synced. The browser audit then lists the request as approved but not read, because nothing was read from the relay.
 
 ## Manage multiple browsers
 
@@ -244,6 +252,8 @@ Revoke all browsers authorized by the current pairing:
 ```bash
 npx @ivjnus/cookie-sync revoke
 ```
+
+The relay tells connected browsers right away; the extension forgets the pairing, shows a notification and asks to be paired again. A browser that was offline learns it the next time it contacts the relay.
 
 ## Reuse a pairing on another machine
 
